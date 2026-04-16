@@ -23,6 +23,24 @@ region: sfo3
 features:
   - buildpack-stack=ubuntu-22
 
+# Custom domains. DNS is managed by Cloudflare (external to DO), so we
+# omit the `zone` field — DO will verify ownership via CNAME lookup and
+# issue Let's Encrypt certs, but won't try to manage DNS records itself.
+#
+# Cloudflare setup required on your end:
+#   1. SSL/TLS → Overview → set to "Full (strict)"
+#      (Flexible causes a redirect loop with DO's HTTP→HTTPS enforcement)
+#   2. CNAME p2p.lk     → p2p-lk-n5mrd.ondigitalocean.app
+#      CNAME www.p2p.lk → p2p-lk-n5mrd.ondigitalocean.app
+#      Temporarily set BOTH to "DNS only" (grey cloud) so DO can run its
+#      HTTP-01 cert challenge. Once the cert is issued (~2–5 min), flip
+#      them back to "Proxied" (orange cloud).
+domains:
+  - domain: p2p.lk
+    type: PRIMARY
+  - domain: www.p2p.lk
+    type: ALIAS
+
 databases:
   - name: db
     engine: PG
