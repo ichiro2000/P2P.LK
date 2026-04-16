@@ -19,7 +19,7 @@
 # the app components wait for it to come up before starting.
 
 name: p2p-lk
-region: sfo
+region: sfo3
 features:
   - buildpack-stack=ubuntu-22
 
@@ -28,6 +28,7 @@ databases:
     engine: PG
     version: "16"
     production: true
+    cluster_name: p2p-lk-db
     size: db-s-1vcpu-1gb
     num_nodes: 1
     db_name: defaultdb
@@ -51,10 +52,9 @@ envs:
 
 services:
   - name: web
-    github:
-      repo: ichiro2000/P2P.LK
+    git:
+      repo_clone_url: https://github.com/ichiro2000/P2P.LK.git
       branch: main
-      deploy_on_push: true
     source_dir: /
     environment_slug: node-js
     build_command: npm ci && npm run build
@@ -77,10 +77,9 @@ workers:
   # simpler than wiring an external cron, and the --loop script is already
   # hardened for this (per-market error isolation, SIGINT handling).
   - name: ingest
-    github:
-      repo: ichiro2000/P2P.LK
+    git:
+      repo_clone_url: https://github.com/ichiro2000/P2P.LK.git
       branch: main
-      deploy_on_push: true
     source_dir: /
     environment_slug: node-js
     build_command: npm ci
