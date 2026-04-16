@@ -41,7 +41,12 @@ Dark-first, data-dense, production-ready.
 - Stars are surfaced in the topbar of every market page; the Merchants table
   has per-row stars. "Save filter" is baked into the filter bar.
 
-**Stubbed**: Reports.
+**Reports (v5)**
+- **Reports** (`/reports`) — Three exportable views: daily recap (reads the
+  ingested time-series), arbitrage summary (live cross-market scan) and
+  merchant scorecard (live counterparty ranking). Every table has its own
+  one-click CSV download; the full report can be downloaded as a single
+  multi-block CSV or copied to the clipboard.
 
 ## Development
 
