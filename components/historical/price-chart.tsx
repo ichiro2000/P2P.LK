@@ -57,8 +57,10 @@ export function PriceChart({
           Price history
         </CardTitle>
         <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
-          <LegendSwatch color="var(--color-buy)" label="BID" />
-          <LegendSwatch color="var(--color-sell)" label="ASK" />
+          {/* Retail-centric palette: BID (publisher buying) = red,
+              ASK (publisher selling = retail buying) = green. */}
+          <LegendSwatch color="var(--color-sell)" label="BID" />
+          <LegendSwatch color="var(--color-buy)" label="ASK" />
           <LegendSwatch color="var(--color-foreground)" label="MID" dim />
           {showMovingAverages && (
             <>
@@ -80,12 +82,12 @@ export function PriceChart({
               >
                 <defs>
                   <linearGradient id="bidAreaFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-buy)" stopOpacity={0.28} />
-                    <stop offset="100%" stopColor="var(--color-buy)" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="askAreaFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--color-sell)" stopOpacity={0.28} />
                     <stop offset="100%" stopColor="var(--color-sell)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="askAreaFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--color-buy)" stopOpacity={0.28} />
+                    <stop offset="100%" stopColor="var(--color-buy)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis
@@ -151,7 +153,7 @@ export function PriceChart({
                   type="monotone"
                   dataKey="bid"
                   name="BID"
-                  stroke="var(--color-buy)"
+                  stroke="var(--color-sell)"
                   fill="url(#bidAreaFill)"
                   strokeWidth={1.5}
                   dot={false}
@@ -162,7 +164,7 @@ export function PriceChart({
                   type="monotone"
                   dataKey="ask"
                   name="ASK"
-                  stroke="var(--color-sell)"
+                  stroke="var(--color-buy)"
                   fill="url(#askAreaFill)"
                   strokeWidth={1.5}
                   dot={false}

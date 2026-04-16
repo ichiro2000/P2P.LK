@@ -197,8 +197,10 @@ function MerchantRow({
               </span>
               <span>·</span>
               <span>
+                {/* BUY-type ads (merchant bidding) = retail sell context → red.
+                    SELL-type ads (merchant offering) = retail buy context → green. */}
                 {m.buyAds > 0 && (
-                  <span className="text-[color:var(--color-buy)]">
+                  <span className="text-[color:var(--color-sell)]">
                     {m.buyAds}B
                   </span>
                 )}
@@ -206,7 +208,7 @@ function MerchantRow({
                   <span className="text-muted-foreground/40"> / </span>
                 )}
                 {m.sellAds > 0 && (
-                  <span className="text-[color:var(--color-sell)]">
+                  <span className="text-[color:var(--color-buy)]">
                     {m.sellAds}S
                   </span>
                 )}

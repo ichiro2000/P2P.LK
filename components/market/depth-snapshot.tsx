@@ -89,11 +89,11 @@ export function DepthSnapshot({ market }: { market: MarketSnapshot }) {
           </CardTitle>
           <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-buy)]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-sell)]" />
               BID
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-sell)]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-buy)]" />
               ASK
             </span>
           </div>
@@ -107,27 +107,29 @@ export function DepthSnapshot({ market }: { market: MarketSnapshot }) {
               margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
             >
               <defs>
+                {/* BID (publisher's BUY ads) = retail sell context → red.
+                    ASK (publisher's SELL ads) = retail buy context → green. */}
                 <linearGradient id="bidFill" x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="0%"
-                    stopColor="var(--color-buy)"
+                    stopColor="var(--color-sell)"
                     stopOpacity={0.45}
                   />
                   <stop
                     offset="100%"
-                    stopColor="var(--color-buy)"
+                    stopColor="var(--color-sell)"
                     stopOpacity={0}
                   />
                 </linearGradient>
                 <linearGradient id="askFill" x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="0%"
-                    stopColor="var(--color-sell)"
+                    stopColor="var(--color-buy)"
                     stopOpacity={0.45}
                   />
                   <stop
                     offset="100%"
-                    stopColor="var(--color-sell)"
+                    stopColor="var(--color-buy)"
                     stopOpacity={0}
                   />
                 </linearGradient>
@@ -189,7 +191,7 @@ export function DepthSnapshot({ market }: { market: MarketSnapshot }) {
                 type="stepAfter"
                 dataKey="cumBid"
                 name="BID"
-                stroke="var(--color-buy)"
+                stroke="var(--color-sell)"
                 fill="url(#bidFill)"
                 strokeWidth={1.5}
                 isAnimationActive={false}
@@ -198,7 +200,7 @@ export function DepthSnapshot({ market }: { market: MarketSnapshot }) {
                 type="stepBefore"
                 dataKey="cumAsk"
                 name="ASK"
-                stroke="var(--color-sell)"
+                stroke="var(--color-buy)"
                 fill="url(#askFill)"
                 strokeWidth={1.5}
                 isAnimationActive={false}

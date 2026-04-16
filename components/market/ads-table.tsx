@@ -54,15 +54,18 @@ export function AdsTable({ market }: { market: MarketSnapshot }) {
           className="w-auto"
         >
           <TabsList className="h-8">
+            {/* Tab labels reflect the retail user's action: buying = green,
+                selling = red. Internally the tab value is the publisher's
+                ad type, which is the opposite of the user's action. */}
             <TabsTrigger
               value="SELL"
-              className="data-[state=active]:text-[color:var(--color-sell)] px-3 text-xs"
+              className="data-[state=active]:text-[color:var(--color-buy)] px-3 text-xs"
             >
               I want to buy
             </TabsTrigger>
             <TabsTrigger
               value="BUY"
-              className="data-[state=active]:text-[color:var(--color-buy)] px-3 text-xs"
+              className="data-[state=active]:text-[color:var(--color-sell)] px-3 text-xs"
             >
               I want to sell
             </TabsTrigger>
@@ -127,10 +130,12 @@ function AdRow({
   isBest: boolean;
   marketMedian: number | null;
 }) {
+  // BUY-type ads = publisher buying = retail selling context → red.
+  // SELL-type ads = publisher selling = retail buying context → green.
   const priceColor =
     side === "BUY"
-      ? "text-[color:var(--color-buy)]"
-      : "text-[color:var(--color-sell)]";
+      ? "text-[color:var(--color-sell)]"
+      : "text-[color:var(--color-buy)]";
 
   const premium =
     marketMedian && marketMedian > 0

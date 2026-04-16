@@ -78,9 +78,11 @@ export function SpreadWidget({ market }: { market: MarketSnapshot }) {
               {mid != null ? formatFiat(mid, symbol, 2) : "—"}
             </span>
           </span>
+          {/* Bid = BUY-type ads (retail sell context) → red.
+              Ask = SELL-type ads (retail buy context) → green. */}
           <span>
             Bid{" "}
-            <span className="font-mono tabular-nums text-[color:var(--color-buy)]">
+            <span className="font-mono tabular-nums text-[color:var(--color-sell)]">
               {market.buy.bestPrice != null
                 ? formatFiat(market.buy.bestPrice, symbol, 2)
                 : "—"}
@@ -88,7 +90,7 @@ export function SpreadWidget({ market }: { market: MarketSnapshot }) {
           </span>
           <span>
             Ask{" "}
-            <span className="font-mono tabular-nums text-[color:var(--color-sell)]">
+            <span className="font-mono tabular-nums text-[color:var(--color-buy)]">
               {market.sell.bestPrice != null
                 ? formatFiat(market.sell.bestPrice, symbol, 2)
                 : "—"}

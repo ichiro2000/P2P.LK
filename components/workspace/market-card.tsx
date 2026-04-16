@@ -60,15 +60,17 @@ export function WatchlistMarketCard({ ref }: { ref: MarketRef }) {
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-3">
+            {/* BID = publisher buying (retail sell context) → red.
+                ASK = publisher selling (retail buy context) → green. */}
             <PriceBlock
-              tone="buy"
+              tone="sell"
               label="BID"
               value={bid}
               symbol={symbol}
               loading={loading && bid == null}
             />
             <PriceBlock
-              tone="sell"
+              tone="buy"
               label="ASK"
               value={ask}
               symbol={symbol}

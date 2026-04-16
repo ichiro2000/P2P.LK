@@ -53,12 +53,12 @@ export function DepthChart({
               >
                 <defs>
                   <linearGradient id="bidDepthFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-buy)" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="var(--color-buy)" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="askDepthFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--color-sell)" stopOpacity={0.35} />
                     <stop offset="100%" stopColor="var(--color-sell)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="askDepthFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--color-buy)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="var(--color-buy)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis
@@ -114,7 +114,7 @@ export function DepthChart({
                   dataKey="bid"
                   name="BID"
                   stackId="1"
-                  stroke="var(--color-buy)"
+                  stroke="var(--color-sell)"
                   fill="url(#bidDepthFill)"
                   strokeWidth={1.25}
                   isAnimationActive={false}
@@ -124,7 +124,7 @@ export function DepthChart({
                   dataKey="ask"
                   name="ASK"
                   stackId="1"
-                  stroke="var(--color-sell)"
+                  stroke="var(--color-buy)"
                   fill="url(#askDepthFill)"
                   strokeWidth={1.25}
                   isAnimationActive={false}

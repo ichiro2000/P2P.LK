@@ -16,11 +16,13 @@ export function LiquidityStrip({ market }: { market: MarketSnapshot }) {
   const askPct = (ask / max) * 100;
 
   const imbalance = bid + ask > 0 ? (bid - ask) / (bid + ask) : 0;
+  // Retail framing: heavy bid depth means merchants are competing to BUY
+  // — the place retail goes to SELL. Heavy ask depth is the inverse.
   const imbalanceText =
     imbalance > 0.1
-      ? "Buy pressure"
+      ? "Sell pressure"
       : imbalance < -0.1
-        ? "Sell pressure"
+        ? "Buy pressure"
         : "Balanced book";
 
   return (
@@ -33,10 +35,12 @@ export function LiquidityStrip({ market }: { market: MarketSnapshot }) {
           <span
             className={cn(
               "font-mono text-[10px] tabular-nums",
+              // Heavy BID side = retail sell-pressure → red;
+              // Heavy ASK side = retail buy-pressure → green.
               imbalance > 0.1
-                ? "text-[color:var(--color-buy)]"
+                ? "text-[color:var(--color-sell)]"
                 : imbalance < -0.1
-                  ? "text-[color:var(--color-sell)]"
+                  ? "text-[color:var(--color-buy)]"
                   : "text-muted-foreground",
             )}
           >
@@ -45,17 +49,19 @@ export function LiquidityStrip({ market }: { market: MarketSnapshot }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-3 pb-4">
+        {/* BID (publisher BUY ads) = retail sell context → red.
+            ASK (publisher SELL ads) = retail buy context → green. */}
         <Bar
           label="BID"
           pct={bidPct}
           value={`${formatCompact(bid)} ${market.asset}`}
-          tone="buy"
+          tone="sell"
         />
         <Bar
           label="ASK"
           pct={askPct}
           value={`${formatCompact(ask)} ${market.asset}`}
-          tone="sell"
+          tone="buy"
         />
       </CardContent>
     </Card>
