@@ -80,9 +80,11 @@ export default async function LiquidityPage({
     liveOk = false;
   }
 
-  const snapshots = listMarketSnapshots(filters.asset, filters.fiat, range);
-  const summary = marketSummary(filters.asset, filters.fiat, range);
-  const heatmap = depthHeatmap(filters.asset, filters.fiat, "30d");
+  const [snapshots, summary, heatmap] = await Promise.all([
+    listMarketSnapshots(filters.asset, filters.fiat, range),
+    marketSummary(filters.asset, filters.fiat, range),
+    depthHeatmap(filters.asset, filters.fiat, "30d"),
+  ]);
 
   const latest = snapshots[snapshots.length - 1];
   const totalLatest =

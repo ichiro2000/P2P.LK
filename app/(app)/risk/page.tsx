@@ -39,13 +39,13 @@ export default async function RiskPage({ searchParams }: { searchParams: SP }) {
   const rangeKey = String(sp.range ?? "24h") as RangeKey;
   const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
 
-  const tracked = listTrackedMarkets("30d");
+  const tracked = await listTrackedMarkets("30d");
   const hasData = tracked.some(
     (t) => t.asset === filters.asset && t.fiat === filters.fiat,
   );
 
   const report = hasData
-    ? computeRiskReport(filters.asset, filters.fiat, range)
+    ? await computeRiskReport(filters.asset, filters.fiat, range)
     : null;
 
   const fiat = getFiat(filters.fiat);

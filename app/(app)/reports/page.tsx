@@ -46,8 +46,10 @@ export default async function ReportsPage({
   const rangeKey = String(sp.range ?? "24h") as RangeKey;
   const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
 
-  const tracked = listTrackedMarkets("30d");
-  const available = listAvailableMarkets();
+  const [tracked, available] = await Promise.all([
+    listTrackedMarkets("30d"),
+    listAvailableMarkets(),
+  ]);
   const hasHistory = available.some(
     (m) => m.asset === filters.asset && m.fiat === filters.fiat,
   );
@@ -61,7 +63,7 @@ export default async function ReportsPage({
     } else if (kind === "merchants") {
       doc = await merchantScorecardReport(filters.asset, filters.fiat);
     } else if (hasHistory) {
-      doc = dailyRecapReport(filters.asset, filters.fiat, range);
+      doc = await dailyRecapReport(filters.asset, filters.fiat, range);
     }
   } catch (err) {
     errorMsg = err instanceof Error ? err.message : "Report generation failed";

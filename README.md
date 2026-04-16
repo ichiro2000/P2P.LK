@@ -8,7 +8,7 @@ Dark-first, data-dense, production-ready.
 
 - Next.js 16 (App Router) · React 19 · TypeScript
 - Tailwind CSS v4 · shadcn/ui (Base UI) · Recharts · Lucide
-- SQLite (better-sqlite3) · Drizzle ORM · `tsx` for CLI scripts
+- libSQL (local file + Turso-ready) · Drizzle ORM · `tsx` for CLI scripts
 - Data source: Binance P2P public endpoint (no auth required)
 
 ## Features
@@ -64,18 +64,14 @@ npm run ingest:loop      # every 120s, Ctrl-C to stop
 npm run ingest -- USDT:LKR
 ```
 
-The SQLite DB lives at `data/p2p.db` (gitignored) and is bootstrapped on
+The libSQL DB lives at `data/p2p.db` (gitignored) and is bootstrapped on
 first connection — no manual migration step.
 
-## Production ingest
+## Production
 
-`vercel.json` schedules `/api/cron/snapshot` every 5 minutes. Protect the
-endpoint by setting `CRON_SECRET` — Vercel Cron jobs automatically send
-`Authorization: Bearer $CRON_SECRET`.
-
-For real Vercel deploys, swap the SQLite connection in `lib/db/client.ts`
-for libSQL/Turso or a Postgres driver; the Drizzle schema and queries are
-unchanged.
+Vercel + Turso is the default path. Set `DATABASE_URL`,
+`DATABASE_AUTH_TOKEN` and `CRON_SECRET` — everything else works out of the
+box. See [DEPLOY.md](./DEPLOY.md) for the full walkthrough.
 
 ## Architecture
 

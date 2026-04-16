@@ -1,4 +1,4 @@
-import { db, schema } from "@/lib/db/client";
+import { getDb, schema } from "@/lib/db/client";
 import {
   listMarketSnapshots,
   marketSummary,
@@ -50,14 +50,17 @@ export type ReportDocument = {
  * Recap for one market over a given range. Uses the ingested time-series
  * exclusively — the point of a recap is what happened, not the live tick.
  */
-export function dailyRecapReport(
+export async function dailyRecapReport(
   asset: string,
   fiat: string,
   range: RangeKey = "24h",
-): ReportDocument {
-  const snapshots = listMarketSnapshots(asset, fiat, range);
-  const summary = marketSummary(asset, fiat, range);
-  const latest = latestMarketSnapshot(asset, fiat);
+): Promise<ReportDocument> {
+  const [snapshots, summary, latest, risk] = await Promise.all([
+    listMarketSnapshots(asset, fiat, range),
+    marketSummary(asset, fiat, range),
+    latestMarketSnapshot(asset, fiat),
+    computeRiskReport(asset, fiat, range),
+  ]);
   const first = snapshots[0];
 
   const mids = snapshots
@@ -66,11 +69,10 @@ export function dailyRecapReport(
   const σ = stdev(mids);
   const μ = mean(mids);
 
-  const risk = computeRiskReport(asset, fiat, range);
-
-  // Top merchants in the latest tick ranked by total fiat depth.
+  // Top merchants in the range ranked by average fiat depth.
   const since = Math.floor(Date.now() / 1000) - RANGES[range];
-  const latestMerchants = db
+  const db = await getDb();
+  const latestMerchants = await db
     .select({
       name: schema.merchantSnapshots.merchantName,
       orders: schema.merchantSnapshots.ordersMonth,
@@ -86,8 +88,7 @@ export function dailyRecapReport(
         gte(schema.merchantSnapshots.ts, since),
       ),
     )
-    .orderBy(asc(schema.merchantSnapshots.ts))
-    .all();
+    .orderBy(asc(schema.merchantSnapshots.ts));
 
   // Reduce to per-merchant averages within the window.
   const mMap = new Map<
@@ -421,7 +422,8 @@ export async function merchantScorecardReport(
  * populate the Reports picker and prevent users from running recap reports
  * against markets the ingest has never seen.
  */
-export function listAvailableMarkets() {
+export async function listAvailableMarkets() {
+  const db = await getDb();
   return db
     .selectDistinct({
       asset: schema.marketSnapshots.asset,
@@ -431,7 +433,6 @@ export function listAvailableMarkets() {
     .orderBy(
       asc(schema.marketSnapshots.asset),
       asc(schema.marketSnapshots.fiat),
-    )
-    .all();
+    );
 }
 

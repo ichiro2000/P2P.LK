@@ -1,46 +1,62 @@
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/libsql";
+import { createClient, type Client } from "@libsql/client";
 import path from "node:path";
 import fs from "node:fs";
 import * as schema from "./schema";
 
 /**
- * Singleton better-sqlite3 connection. We intentionally store the instance on
- * `globalThis` so that Next.js hot-reloads (which re-evaluate this module on
- * every request during dev) don't leak file descriptors.
+ * Single async driver: libSQL.
  *
- * Production note: better-sqlite3 only works in long-running Node runtimes.
- * When deploying to Vercel serverless or Edge, swap the connection here for
- * a libSQL/Turso or Postgres driver — the schema and query layer are unchanged.
+ * - Locally (no env vars): uses a file at data/p2p.db — libSQL is SQLite-
+ *   compatible, so `npm run dev` has zero extra setup.
+ * - On Vercel / remote: set DATABASE_URL (e.g. Turso) and optionally
+ *   DATABASE_AUTH_TOKEN. The same Drizzle schema and queries work unchanged.
+ *
+ * We cache the client on globalThis so Next.js hot-reloads don't leak
+ * connections during dev.
  */
 
 const DB_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DB_DIR, "p2p.db");
+const LOCAL_DB_PATH = path.join(DB_DIR, "p2p.db");
+const LOCAL_URL = `file:${LOCAL_DB_PATH}`;
 
 declare global {
   // eslint-disable-next-line no-var
-  var __p2pDb: Database.Database | undefined;
+  var __p2pClient: Client | undefined;
+  // eslint-disable-next-line no-var
+  var __p2pSchemaReady: boolean | undefined;
 }
 
-function getHandle() {
-  if (global.__p2pDb) return global.__p2pDb;
+function resolveConfig() {
+  const envUrl = process.env.DATABASE_URL;
+  if (envUrl) {
+    return {
+      url: envUrl,
+      authToken: process.env.DATABASE_AUTH_TOKEN,
+    };
+  }
   fs.mkdirSync(DB_DIR, { recursive: true });
-  const sqlite = new Database(DB_PATH);
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("synchronous = NORMAL");
-  sqlite.pragma("foreign_keys = ON");
-  bootstrapSchema(sqlite);
-  global.__p2pDb = sqlite;
-  return sqlite;
+  return { url: LOCAL_URL, authToken: undefined };
+}
+
+function getClient(): Client {
+  if (global.__p2pClient) return global.__p2pClient;
+  const cfg = resolveConfig();
+  global.__p2pClient = createClient(cfg);
+  return global.__p2pClient;
 }
 
 /**
- * Idempotent schema bootstrap — run on first connection.
- * In production we'd use drizzle-kit migrations; for this project the schema
- * is small enough that embedding DDL here keeps the dev loop trivial.
+ * Idempotent schema bootstrap. Runs once per process — gated behind a
+ * globalThis flag so repeated imports (e.g. Next.js module re-eval) don't
+ * re-issue the DDL on every request.
+ *
+ * For dev convenience we do this here rather than wiring drizzle-kit
+ * migrations. In production, prefer a one-shot migration job.
  */
-function bootstrapSchema(sqlite: Database.Database) {
-  sqlite.exec(`
+async function ensureSchema(client: Client) {
+  if (global.__p2pSchemaReady) return;
+  await client.executeMultiple(`
     CREATE TABLE IF NOT EXISTS market_snapshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       ts INTEGER NOT NULL,
@@ -62,10 +78,8 @@ function bootstrapSchema(sqlite: Database.Database) {
       bid_depth_fiat REAL,
       ask_depth_fiat REAL
     );
-    CREATE INDEX IF NOT EXISTS idx_market_ts
-      ON market_snapshots (asset, fiat, ts);
-    CREATE INDEX IF NOT EXISTS idx_market_recent
-      ON market_snapshots (ts);
+    CREATE INDEX IF NOT EXISTS idx_market_ts ON market_snapshots (asset, fiat, ts);
+    CREATE INDEX IF NOT EXISTS idx_market_recent ON market_snapshots (ts);
 
     CREATE TABLE IF NOT EXISTS merchant_snapshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,13 +98,23 @@ function bootstrapSchema(sqlite: Database.Database) {
       best_sell_price REAL,
       total_available_fiat REAL
     );
-    CREATE INDEX IF NOT EXISTS idx_merchant_ts
-      ON merchant_snapshots (merchant_id, asset, fiat, ts);
-    CREATE INDEX IF NOT EXISTS idx_merchant_market
-      ON merchant_snapshots (asset, fiat, ts);
+    CREATE INDEX IF NOT EXISTS idx_merchant_ts ON merchant_snapshots (merchant_id, asset, fiat, ts);
+    CREATE INDEX IF NOT EXISTS idx_merchant_market ON merchant_snapshots (asset, fiat, ts);
   `);
+  global.__p2pSchemaReady = true;
 }
 
-export const db = drizzle(getHandle(), { schema });
+const client = getClient();
+
+/**
+ * Exported as a Promise-returning helper. Call `await getDb()` at the top of
+ * any query function. Schema is bootstrapped lazily on first use.
+ */
+export async function getDb() {
+  await ensureSchema(client);
+  return db;
+}
+
+export const db = drizzle(client, { schema });
 export { schema };
-export { DB_PATH };
+export { LOCAL_DB_PATH as DB_PATH };

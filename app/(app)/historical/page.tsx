@@ -50,9 +50,11 @@ export default async function HistoricalPage({
   const rangeKey = String(sp.range ?? "24h") as RangeKey;
   const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
 
-  const snapshots = listMarketSnapshots(filters.asset, filters.fiat, range);
-  const summary = marketSummary(filters.asset, filters.fiat, range);
-  const tracked = listTrackedMarkets("30d");
+  const [snapshots, summary, tracked] = await Promise.all([
+    listMarketSnapshots(filters.asset, filters.fiat, range),
+    marketSummary(filters.asset, filters.fiat, range),
+    listTrackedMarkets("30d"),
+  ]);
 
   const fiat = getFiat(filters.fiat);
   const symbol = fiat?.symbol ?? filters.fiat;

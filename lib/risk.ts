@@ -54,14 +54,16 @@ export type RiskReport = {
  *   - Low-completion at top (merchant holding best-of-book with < 90% completion)
  *   - Extreme premium    (latest mid > 2σ from distribution of last range)
  */
-export function computeRiskReport(
+export async function computeRiskReport(
   asset: string,
   fiat: string,
   range: RangeKey = "24h",
-): RiskReport {
+): Promise<RiskReport> {
   const generatedAt = new Date().toISOString();
-  const snapshots = listMarketSnapshots(asset, fiat, range);
-  const latest = latestMarketSnapshot(asset, fiat);
+  const [snapshots, latest] = await Promise.all([
+    listMarketSnapshots(asset, fiat, range),
+    latestMarketSnapshot(asset, fiat),
+  ]);
 
   const signals: RiskSignal[] = [];
   const flagged: MerchantFlag[] = [];
@@ -114,8 +116,10 @@ export function computeRiskReport(
   }
 
   // ── merchants: churn + low-completion at best price
-  const current = merchantsInLatestTick(asset, fiat);
-  const window = merchantChurnWindow(asset, fiat, range);
+  const [current, window] = await Promise.all([
+    merchantsInLatestTick(asset, fiat),
+    merchantChurnWindow(asset, fiat, range),
+  ]);
 
   const hourAgo = Math.floor(Date.now() / 1000) - 3600;
   const freshIds = new Set(

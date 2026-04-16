@@ -1,4 +1,4 @@
-import { db, schema } from "./client";
+import { getDb, schema } from "./client";
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import type {
   MarketSnapshotRow,
@@ -24,11 +24,12 @@ export function rangeSinceSeconds(range: RangeKey): number {
 
 /** ── Market queries ──────────────────────────────────────────────────── */
 
-export function listMarketSnapshots(
+export async function listMarketSnapshots(
   asset: string,
   fiat: string,
   range: RangeKey,
-): MarketSnapshotRow[] {
+): Promise<MarketSnapshotRow[]> {
+  const db = await getDb();
   const since = rangeSinceSeconds(range);
   return db
     .select()
@@ -40,15 +41,15 @@ export function listMarketSnapshots(
         gte(schema.marketSnapshots.ts, since),
       ),
     )
-    .orderBy(asc(schema.marketSnapshots.ts))
-    .all();
+    .orderBy(asc(schema.marketSnapshots.ts));
 }
 
-export function latestMarketSnapshot(
+export async function latestMarketSnapshot(
   asset: string,
   fiat: string,
-): MarketSnapshotRow | undefined {
-  return db
+): Promise<MarketSnapshotRow | undefined> {
+  const db = await getDb();
+  const rows = await db
     .select()
     .from(schema.marketSnapshots)
     .where(
@@ -58,18 +59,19 @@ export function latestMarketSnapshot(
       ),
     )
     .orderBy(desc(schema.marketSnapshots.ts))
-    .limit(1)
-    .get();
+    .limit(1);
+  return rows[0];
 }
 
 /** Summary stats from the last `range` window. */
-export function marketSummary(
+export async function marketSummary(
   asset: string,
   fiat: string,
   range: RangeKey,
 ) {
+  const db = await getDb();
   const since = rangeSinceSeconds(range);
-  const rows = db
+  const rows = await db
     .select({
       count: sql<number>`count(*)`.as("c"),
       avgMid: sql<number | null>`avg(${schema.marketSnapshots.mid})`.as("avg_mid"),
@@ -92,13 +94,13 @@ export function marketSummary(
         eq(schema.marketSnapshots.fiat, fiat),
         gte(schema.marketSnapshots.ts, since),
       ),
-    )
-    .all();
+    );
   return rows[0];
 }
 
 /** All markets with at least one snapshot in the given range. */
-export function listTrackedMarkets(range: RangeKey = "24h") {
+export async function listTrackedMarkets(range: RangeKey = "24h") {
+  const db = await getDb();
   const since = rangeSinceSeconds(range);
   return db
     .select({
@@ -110,73 +112,16 @@ export function listTrackedMarkets(range: RangeKey = "24h") {
     .from(schema.marketSnapshots)
     .where(gte(schema.marketSnapshots.ts, since))
     .groupBy(schema.marketSnapshots.asset, schema.marketSnapshots.fiat)
-    .orderBy(asc(schema.marketSnapshots.asset), asc(schema.marketSnapshots.fiat))
-    .all();
+    .orderBy(asc(schema.marketSnapshots.asset), asc(schema.marketSnapshots.fiat));
 }
 
-/** ── Merchant queries ────────────────────────────────────────────────── */
-
-export function merchantHistory(
-  merchantId: string,
-  asset: string,
-  fiat: string,
-  range: RangeKey,
-): MerchantSnapshotRow[] {
-  const since = rangeSinceSeconds(range);
-  return db
-    .select()
-    .from(schema.merchantSnapshots)
-    .where(
-      and(
-        eq(schema.merchantSnapshots.merchantId, merchantId),
-        eq(schema.merchantSnapshots.asset, asset),
-        eq(schema.merchantSnapshots.fiat, fiat),
-        gte(schema.merchantSnapshots.ts, since),
-      ),
-    )
-    .orderBy(asc(schema.merchantSnapshots.ts))
-    .all();
-}
-
-/** Merchants that appeared in the current tick of a market. */
-export function merchantsInLatestTick(
-  asset: string,
-  fiat: string,
-): MerchantSnapshotRow[] {
-  const latest = db
-    .select({ ts: sql<number>`max(${schema.merchantSnapshots.ts})` })
-    .from(schema.merchantSnapshots)
-    .where(
-      and(
-        eq(schema.merchantSnapshots.asset, asset),
-        eq(schema.merchantSnapshots.fiat, fiat),
-      ),
-    )
-    .get();
-  if (!latest?.ts) return [];
-
-  return db
-    .select()
-    .from(schema.merchantSnapshots)
-    .where(
-      and(
-        eq(schema.merchantSnapshots.asset, asset),
-        eq(schema.merchantSnapshots.fiat, fiat),
-        eq(schema.merchantSnapshots.ts, latest.ts),
-      ),
-    )
-    .all();
-}
-
-/** Aggregate bid+ask depth by (day-of-week, hour-of-day) in the local tz.
- *  Returns a 7×24 matrix (Sun..Sat × 0..23) with average total depth and
- *  sample count per cell. Uses local interpretation of the stored unix ts. */
-export function depthHeatmap(
+/** Aggregate bid+ask depth by (day-of-week, hour-of-day) in the local tz. */
+export async function depthHeatmap(
   asset: string,
   fiat: string,
   range: RangeKey = "7d",
 ) {
-  const rows = listMarketSnapshots(asset, fiat, range);
+  const rows = await listMarketSnapshots(asset, fiat, range);
 
   type Cell = { sum: number; count: number };
   const grid: Cell[][] = Array.from({ length: 7 }, () =>
@@ -185,8 +130,8 @@ export function depthHeatmap(
 
   for (const r of rows) {
     const d = new Date(r.ts * 1000);
-    const dow = d.getDay(); // 0..6 (Sun..Sat)
-    const hour = d.getHours(); // 0..23
+    const dow = d.getDay();
+    const hour = d.getHours();
     const depth = (r.bidDepth ?? 0) + (r.askDepth ?? 0);
     const cell = grid[dow][hour];
     cell.sum += depth;
@@ -212,12 +157,66 @@ export function depthHeatmap(
   return { cells: flat, max: globalMax, totalPoints: rows.length };
 }
 
-/** Distinct merchant-ids seen in a window, with counts and last price. */
-export function merchantChurnWindow(
+/** ── Merchant queries ────────────────────────────────────────────────── */
+
+export async function merchantHistory(
+  merchantId: string,
+  asset: string,
+  fiat: string,
+  range: RangeKey,
+): Promise<MerchantSnapshotRow[]> {
+  const db = await getDb();
+  const since = rangeSinceSeconds(range);
+  return db
+    .select()
+    .from(schema.merchantSnapshots)
+    .where(
+      and(
+        eq(schema.merchantSnapshots.merchantId, merchantId),
+        eq(schema.merchantSnapshots.asset, asset),
+        eq(schema.merchantSnapshots.fiat, fiat),
+        gte(schema.merchantSnapshots.ts, since),
+      ),
+    )
+    .orderBy(asc(schema.merchantSnapshots.ts));
+}
+
+export async function merchantsInLatestTick(
+  asset: string,
+  fiat: string,
+): Promise<MerchantSnapshotRow[]> {
+  const db = await getDb();
+  const latestRows = await db
+    .select({ ts: sql<number>`max(${schema.merchantSnapshots.ts})` })
+    .from(schema.merchantSnapshots)
+    .where(
+      and(
+        eq(schema.merchantSnapshots.asset, asset),
+        eq(schema.merchantSnapshots.fiat, fiat),
+      ),
+    )
+    .limit(1);
+  const ts = latestRows[0]?.ts;
+  if (!ts) return [];
+
+  return db
+    .select()
+    .from(schema.merchantSnapshots)
+    .where(
+      and(
+        eq(schema.merchantSnapshots.asset, asset),
+        eq(schema.merchantSnapshots.fiat, fiat),
+        eq(schema.merchantSnapshots.ts, ts),
+      ),
+    );
+}
+
+export async function merchantChurnWindow(
   asset: string,
   fiat: string,
   range: RangeKey,
 ) {
+  const db = await getDb();
   const since = rangeSinceSeconds(range);
   return db
     .select({
@@ -238,6 +237,5 @@ export function merchantChurnWindow(
         gte(schema.merchantSnapshots.ts, since),
       ),
     )
-    .groupBy(schema.merchantSnapshots.merchantId)
-    .all();
+    .groupBy(schema.merchantSnapshots.merchantId);
 }

@@ -1,4 +1,4 @@
-import { db, schema } from "@/lib/db/client";
+import { getDb, schema } from "@/lib/db/client";
 import { fetchBothSides, normalizeAds } from "@/lib/binance";
 import { buildMarket, summarizeMerchants } from "@/lib/analytics";
 import { DEFAULT_ARB_FIATS } from "@/lib/constants";
@@ -45,6 +45,8 @@ export async function runIngest(
     errors: [],
   };
 
+  const db = await getDb();
+
   for (const { asset, fiat } of markets) {
     try {
       const { buy, sell } = await fetchBothSides({
@@ -56,28 +58,26 @@ export async function runIngest(
 
       if (buy.length === 0 && sell.length === 0) {
         // Still record the market row with nulls so gaps are visible.
-        db.insert(schema.marketSnapshots)
-          .values({
-            ts,
-            asset,
-            fiat,
-            bestBid: null,
-            bestAsk: null,
-            mid: null,
-            spread: null,
-            spreadPct: null,
-            medianBid: null,
-            medianAsk: null,
-            vwapBid: null,
-            vwapAsk: null,
-            bidCount: 0,
-            askCount: 0,
-            bidDepth: 0,
-            askDepth: 0,
-            bidDepthFiat: 0,
-            askDepthFiat: 0,
-          })
-          .run();
+        await db.insert(schema.marketSnapshots).values({
+          ts,
+          asset,
+          fiat,
+          bestBid: null,
+          bestAsk: null,
+          mid: null,
+          spread: null,
+          spreadPct: null,
+          medianBid: null,
+          medianAsk: null,
+          vwapBid: null,
+          vwapAsk: null,
+          bidCount: 0,
+          askCount: 0,
+          bidDepth: 0,
+          askDepth: 0,
+          bidDepthFiat: 0,
+          askDepthFiat: 0,
+        });
         report.marketRowsInserted += 1;
         continue;
       }
@@ -91,53 +91,48 @@ export async function runIngest(
         snapshot.sell.medianPrice ?? snapshot.buy.medianPrice ?? null;
       const merchants = summarizeMerchants(ads, medianForPremium);
 
-      db.insert(schema.marketSnapshots)
-        .values({
-          ts,
-          asset,
-          fiat,
-          bestBid: snapshot.buy.bestPrice,
-          bestAsk: snapshot.sell.bestPrice,
-          mid: snapshot.mid,
-          spread: snapshot.spread,
-          spreadPct: snapshot.spreadPct,
-          medianBid: snapshot.buy.medianPrice,
-          medianAsk: snapshot.sell.medianPrice,
-          vwapBid: snapshot.buy.vwap,
-          vwapAsk: snapshot.sell.vwap,
-          bidCount: snapshot.buy.count,
-          askCount: snapshot.sell.count,
-          bidDepth: snapshot.buy.totalAvailable,
-          askDepth: snapshot.sell.totalAvailable,
-          bidDepthFiat: snapshot.buy.totalAvailableFiat,
-          askDepthFiat: snapshot.sell.totalAvailableFiat,
-        })
-        .run();
+      await db.insert(schema.marketSnapshots).values({
+        ts,
+        asset,
+        fiat,
+        bestBid: snapshot.buy.bestPrice,
+        bestAsk: snapshot.sell.bestPrice,
+        mid: snapshot.mid,
+        spread: snapshot.spread,
+        spreadPct: snapshot.spreadPct,
+        medianBid: snapshot.buy.medianPrice,
+        medianAsk: snapshot.sell.medianPrice,
+        vwapBid: snapshot.buy.vwap,
+        vwapAsk: snapshot.sell.vwap,
+        bidCount: snapshot.buy.count,
+        askCount: snapshot.sell.count,
+        bidDepth: snapshot.buy.totalAvailable,
+        askDepth: snapshot.sell.totalAvailable,
+        bidDepthFiat: snapshot.buy.totalAvailableFiat,
+        askDepthFiat: snapshot.sell.totalAvailableFiat,
+      });
       report.marketRowsInserted += 1;
 
       if (merchants.length > 0) {
-        const insert = db
-          .insert(schema.merchantSnapshots)
-          .values(
-            merchants.map((m) => ({
-              ts,
-              asset,
-              fiat,
-              merchantId: m.id,
-              merchantName: m.name,
-              isMerchant: m.isMerchant,
-              ordersMonth: m.orders30d,
-              completionRate: m.completionRate,
-              avgReleaseSec: m.avgReleaseSec ?? null,
-              buyAds: m.buyAds,
-              sellAds: m.sellAds,
-              bestBuyPrice: m.bestBuyPrice,
-              bestSellPrice: m.bestSellPrice,
-              totalAvailableFiat: m.totalAvailableFiat,
-            })),
-          )
-          .run();
-        report.merchantRowsInserted += insert.changes ?? merchants.length;
+        await db.insert(schema.merchantSnapshots).values(
+          merchants.map((m) => ({
+            ts,
+            asset,
+            fiat,
+            merchantId: m.id,
+            merchantName: m.name,
+            isMerchant: m.isMerchant,
+            ordersMonth: m.orders30d,
+            completionRate: m.completionRate,
+            avgReleaseSec: m.avgReleaseSec ?? null,
+            buyAds: m.buyAds,
+            sellAds: m.sellAds,
+            bestBuyPrice: m.bestBuyPrice,
+            bestSellPrice: m.bestSellPrice,
+            totalAvailableFiat: m.totalAvailableFiat,
+          })),
+        );
+        report.merchantRowsInserted += merchants.length;
       }
 
       report.marketsSucceeded += 1;

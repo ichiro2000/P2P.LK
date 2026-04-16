@@ -12,6 +12,6 @@ export async function GET(req: NextRequest) {
   const rangeKey = (sp.get("range") ?? "24h") as RangeKey;
   const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
 
-  const report = computeRiskReport(asset, fiat, range);
+  const report = await computeRiskReport(asset, fiat, range);
   return NextResponse.json(report);
 }

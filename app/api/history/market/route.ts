@@ -11,8 +11,10 @@ export async function GET(req: NextRequest) {
   const rangeKey = (sp.get("range") ?? "24h") as RangeKey;
   const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
 
-  const rows = listMarketSnapshots(asset, fiat, range);
-  const summary = marketSummary(asset, fiat, range);
+  const [rows, summary] = await Promise.all([
+    listMarketSnapshots(asset, fiat, range),
+    marketSummary(asset, fiat, range),
+  ]);
 
   return NextResponse.json({
     asset,
