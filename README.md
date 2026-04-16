@@ -25,7 +25,12 @@ Dark-first, data-dense, production-ready.
   distribution), liquidity drops, merchant churn, low-completion counterparties
   at top-of-book.
 
-**Stubbed (v3+)**: Liquidity heatmaps, Alerts, Workspace, Reports.
+**Liquidity (v3)**
+- **Liquidity** (`/liquidity`) — Slippage simulator (live book walk for a target
+  fiat amount), merchant concentration (HHI + top-N share) for both sides,
+  total-depth trend with SMA20 and 7×24 depth heatmap by weekday × hour.
+
+**Stubbed**: Alerts, Workspace, Reports.
 
 ## Development
 

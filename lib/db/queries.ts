@@ -168,6 +168,50 @@ export function merchantsInLatestTick(
     .all();
 }
 
+/** Aggregate bid+ask depth by (day-of-week, hour-of-day) in the local tz.
+ *  Returns a 7×24 matrix (Sun..Sat × 0..23) with average total depth and
+ *  sample count per cell. Uses local interpretation of the stored unix ts. */
+export function depthHeatmap(
+  asset: string,
+  fiat: string,
+  range: RangeKey = "7d",
+) {
+  const rows = listMarketSnapshots(asset, fiat, range);
+
+  type Cell = { sum: number; count: number };
+  const grid: Cell[][] = Array.from({ length: 7 }, () =>
+    Array.from({ length: 24 }, () => ({ sum: 0, count: 0 })),
+  );
+
+  for (const r of rows) {
+    const d = new Date(r.ts * 1000);
+    const dow = d.getDay(); // 0..6 (Sun..Sat)
+    const hour = d.getHours(); // 0..23
+    const depth = (r.bidDepth ?? 0) + (r.askDepth ?? 0);
+    const cell = grid[dow][hour];
+    cell.sum += depth;
+    cell.count += 1;
+  }
+
+  const flat: {
+    dow: number;
+    hour: number;
+    avg: number;
+    count: number;
+  }[] = [];
+  let globalMax = 0;
+  for (let d = 0; d < 7; d++) {
+    for (let h = 0; h < 24; h++) {
+      const c = grid[d][h];
+      const avg = c.count > 0 ? c.sum / c.count : 0;
+      if (avg > globalMax) globalMax = avg;
+      flat.push({ dow: d, hour: h, avg, count: c.count });
+    }
+  }
+
+  return { cells: flat, max: globalMax, totalPoints: rows.length };
+}
+
 /** Distinct merchant-ids seen in a window, with counts and last price. */
 export function merchantChurnWindow(
   asset: string,

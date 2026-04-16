@@ -63,8 +63,7 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/liquidity",
         label: "Liquidity",
         icon: Droplets,
-        soon: true,
-        description: "Book depth, slippage and concentration",
+        description: "Slippage simulator, concentration, depth heatmap",
       },
       {
         href: "/risk",
