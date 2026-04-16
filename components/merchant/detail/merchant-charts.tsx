@@ -3,8 +3,6 @@
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   ComposedChart,
   Line,
   ResponsiveContainer,
@@ -499,19 +497,29 @@ export function MerchantAdCountChart({ points }: { points: MerchantPoint[] }) {
         ) : (
           <div className="h-[180px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
+              <AreaChart
                 data={data}
                 margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
               >
+                <defs>
+                  <linearGradient id="mAdBuyFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--color-sell)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="var(--color-sell)" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="mAdSellFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--color-buy)" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="var(--color-buy)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <XAxis
                   dataKey="t"
                   type="number"
-                  scale="time"
                   domain={["dataMin", "dataMax"]}
                   tick={axisTick}
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={(v) => shortTime(Number(v))}
+                  minTickGap={48}
                 />
                 <YAxis
                   tick={axisTick}
@@ -525,23 +533,27 @@ export function MerchantAdCountChart({ points }: { points: MerchantPoint[] }) {
                   labelFormatter={(v) => shortTime(Number(v), true)}
                   formatter={(val, name) => [String(val), name as string]}
                 />
-                <Bar
+                <Area
+                  type="stepAfter"
                   dataKey="buy"
                   stackId="ads"
-                  fill="var(--color-sell)"
-                  fillOpacity={0.7}
+                  stroke="var(--color-sell)"
+                  fill="url(#mAdBuyFill)"
+                  strokeWidth={1.25}
                   name="Buy ads"
                   isAnimationActive={false}
                 />
-                <Bar
+                <Area
+                  type="stepAfter"
                   dataKey="sell"
                   stackId="ads"
-                  fill="var(--color-buy)"
-                  fillOpacity={0.7}
+                  stroke="var(--color-buy)"
+                  fill="url(#mAdSellFill)"
+                  strokeWidth={1.25}
                   name="Sell ads"
                   isAnimationActive={false}
                 />
-              </BarChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         )}

@@ -100,19 +100,12 @@ export default async function RiskPage({ searchParams }: { searchParams: SP }) {
                         ? report.stats.priceZ.toFixed(2) + "σ"
                         : "—"
                     }
-                    delta={
-                      report.stats.priceZ != null
-                        ? {
-                            value: report.stats.priceZ,
-                            format: "abs",
-                            tone:
-                              Math.abs(report.stats.priceZ) > 2
-                                ? "sell"
-                                : "muted",
-                          }
-                        : undefined
+                    footnote={
+                      report.stats.priceZ != null &&
+                      Math.abs(report.stats.priceZ) > 2
+                        ? `Outside 2σ · vs ${range} distribution`
+                        : `vs ${range} distribution`
                     }
-                    footnote={`vs ${range} distribution`}
                   />
                   <Stat
                     label="Active merchants"

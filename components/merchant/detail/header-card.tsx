@@ -159,9 +159,6 @@ export function MerchantHeaderCard({ m }: { m: MerchantHeaderData }) {
           <Stat
             label="Premium vs mkt"
             value={premium == null ? "—" : formatPct(premium, { frac: 2, sign: true })}
-            delta={
-              premium == null ? undefined : { value: premium, format: "pct" }
-            }
             footnote="merchant mid − market mid"
           />
           <Stat
