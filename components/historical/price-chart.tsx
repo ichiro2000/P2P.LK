@@ -78,7 +78,7 @@ export function PriceChart({
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
                 data={data}
-                margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
               >
                 <defs>
                   <linearGradient id="bidAreaFill" x1="0" y1="0" x2="0" y2="1">
