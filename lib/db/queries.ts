@@ -211,6 +211,88 @@ export async function merchantsInLatestTick(
     );
 }
 
+/**
+ * Every merchant we've ever seen in this market, collapsed to the most recent
+ * snapshot row per merchant. Drives the "all merchants" directory view —
+ * merchants who have dropped off the live book still appear here with their
+ * last-known stats and `lastSeenTs`.
+ */
+export type KnownMerchantRow = {
+  merchantId: string;
+  merchantName: string;
+  lastSeenTs: number;
+  isMerchant: boolean | null;
+  ordersMonth: number | null;
+  completionRate: number | null;
+  avgReleaseSec: number | null;
+  buyAds: number | null;
+  sellAds: number | null;
+  bestBuyPrice: number | null;
+  bestSellPrice: number | null;
+  totalAvailableFiat: number | null;
+};
+
+export async function listAllKnownMerchants(
+  asset: string,
+  fiat: string,
+): Promise<KnownMerchantRow[]> {
+  const db = await getDb();
+  // DISTINCT ON keeps the most recent row per merchant_id; match Postgres'
+  // requirement that the leading ORDER BY column equals the DISTINCT ON key.
+  const rows = await db.execute<{
+    merchant_id: string;
+    merchant_name: string;
+    last_seen_ts: number | string;
+    is_merchant: boolean | null;
+    orders_month: number | null;
+    completion_rate: number | null;
+    avg_release_sec: number | null;
+    buy_ads: number | null;
+    sell_ads: number | null;
+    best_buy_price: number | null;
+    best_sell_price: number | null;
+    total_available_fiat: number | null;
+  }>(sql`
+    SELECT DISTINCT ON (merchant_id)
+      merchant_id,
+      merchant_name,
+      ts AS last_seen_ts,
+      is_merchant,
+      orders_month,
+      completion_rate,
+      avg_release_sec,
+      buy_ads,
+      sell_ads,
+      best_buy_price,
+      best_sell_price,
+      total_available_fiat
+    FROM merchant_snapshots
+    WHERE asset = ${asset} AND fiat = ${fiat}
+    ORDER BY merchant_id, ts DESC
+  `);
+  return (rows as unknown as Array<Record<string, unknown>>).map((r) => ({
+    merchantId: String(r.merchant_id),
+    merchantName: String(r.merchant_name),
+    lastSeenTs: Number(r.last_seen_ts),
+    isMerchant:
+      r.is_merchant == null ? null : Boolean(r.is_merchant),
+    ordersMonth:
+      r.orders_month == null ? null : Number(r.orders_month),
+    completionRate:
+      r.completion_rate == null ? null : Number(r.completion_rate),
+    avgReleaseSec:
+      r.avg_release_sec == null ? null : Number(r.avg_release_sec),
+    buyAds: r.buy_ads == null ? null : Number(r.buy_ads),
+    sellAds: r.sell_ads == null ? null : Number(r.sell_ads),
+    bestBuyPrice:
+      r.best_buy_price == null ? null : Number(r.best_buy_price),
+    bestSellPrice:
+      r.best_sell_price == null ? null : Number(r.best_sell_price),
+    totalAvailableFiat:
+      r.total_available_fiat == null ? null : Number(r.total_available_fiat),
+  }));
+}
+
 export async function merchantChurnWindow(
   asset: string,
   fiat: string,

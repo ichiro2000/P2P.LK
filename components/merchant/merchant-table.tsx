@@ -10,14 +10,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ArrowDown, ArrowUp, ArrowUpDown, ShieldCheck } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ExternalLink,
+  ShieldCheck,
+} from "lucide-react";
 import { MerchantStar } from "@/components/workspace/star-button";
-import type { MerchantSummary } from "@/lib/analytics";
+import type { MerchantRow } from "@/lib/analytics";
 import {
   formatCompact,
   formatDuration,
   formatFiat,
   formatPct,
+  formatRelative,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -27,7 +34,13 @@ type SortKey =
   | "completionRate"
   | "totalAvailableFiat"
   | "premiumVsMedian"
-  | "avgReleaseSec";
+  | "avgReleaseSec"
+  | "lastSeenTs";
+
+/** Build the Binance public advertiser URL from a userNo. */
+function binanceAdvertiserUrl(id: string): string {
+  return `https://c2c.binance.com/en/advertiserDetail?advertiserNo=${encodeURIComponent(id)}`;
+}
 
 export function MerchantTable({
   merchants,
@@ -35,7 +48,7 @@ export function MerchantTable({
   asset,
   fiat,
 }: {
-  merchants: MerchantSummary[];
+  merchants: MerchantRow[];
   symbol: string;
   asset: string;
   fiat: string;
@@ -46,6 +59,11 @@ export function MerchantTable({
   const sorted = useMemo(() => {
     const list = [...merchants];
     list.sort((a, b) => {
+      // Keep active merchants above inactive when ranking by trust; that's the
+      // most common case and matches user expectation.
+      if (sortKey === "trustScore" && a.isActive !== b.isActive) {
+        return a.isActive ? -1 : 1;
+      }
       const av = (a[sortKey] ?? 0) as number;
       const bv = (b[sortKey] ?? 0) as number;
       return sortDir === "asc" ? av - bv : bv - av;
@@ -68,7 +86,7 @@ export function MerchantTable({
         <Table>
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="w-[220px]">Merchant</TableHead>
+              <TableHead className="w-[240px]">Merchant</TableHead>
               <TableHead className="text-right">
                 <SortH
                   label="Trust"
@@ -117,6 +135,14 @@ export function MerchantTable({
                   onClick={() => toggle("avgReleaseSec")}
                 />
               </TableHead>
+              <TableHead className="text-right">
+                <SortH
+                  label="Last seen"
+                  active={sortKey === "lastSeenTs"}
+                  dir={sortDir}
+                  onClick={() => toggle("lastSeenTs")}
+                />
+              </TableHead>
               <TableHead>Rails</TableHead>
             </TableRow>
           </TableHeader>
@@ -124,7 +150,7 @@ export function MerchantTable({
             {sorted.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={9}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   No merchants in this market right now.
@@ -132,7 +158,7 @@ export function MerchantTable({
               </TableRow>
             )}
             {sorted.map((m, i) => (
-              <MerchantRow
+              <MerchantRowCmp
                 key={m.id}
                 m={m}
                 rank={i + 1}
@@ -148,40 +174,74 @@ export function MerchantTable({
   );
 }
 
-function MerchantRow({
+function MerchantRowCmp({
   m,
   rank,
   symbol,
   asset,
   fiat,
 }: {
-  m: MerchantSummary;
+  m: MerchantRow;
   rank: number;
   symbol: string;
   asset: string;
   fiat: string;
 }) {
   return (
-    <TableRow className="border-border transition-colors hover:bg-accent/40">
+    <TableRow
+      className={cn(
+        "border-border transition-colors hover:bg-accent/40",
+        !m.isActive && "opacity-70",
+      )}
+    >
       <TableCell className="py-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-mono text-[10px] tabular-nums text-muted-foreground w-5 text-right">
             #{rank}
           </span>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50 font-mono text-[11px] font-medium text-muted-foreground">
-            {(m.name || "?").slice(0, 2).toUpperCase()}
+          <div className="relative shrink-0">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-muted/50 font-mono text-[11px] font-medium text-muted-foreground">
+              {(m.name || "?").slice(0, 2).toUpperCase()}
+            </div>
+            <span
+              aria-hidden
+              className={cn(
+                "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-card",
+                m.isActive
+                  ? "bg-[color:var(--color-buy)]"
+                  : "bg-muted-foreground/40",
+              )}
+            />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="truncate text-sm font-medium text-foreground">
-                {m.name}
-              </span>
+              <a
+                href={binanceAdvertiserUrl(m.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex min-w-0 items-center gap-1 truncate text-sm font-medium text-foreground hover:text-primary"
+                title={`Open ${m.name} on Binance`}
+              >
+                <span className="truncate">{m.name}</span>
+                <ExternalLink
+                  className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                  strokeWidth={2}
+                />
+              </a>
               {m.isMerchant && (
                 <ShieldCheck
                   className="h-3 w-3 shrink-0 text-primary"
                   strokeWidth={2}
                   aria-label="Verified merchant"
                 />
+              )}
+              {!m.isActive && (
+                <Badge
+                  variant="outline"
+                  className="h-4 border-dashed px-1 text-[9px] font-medium uppercase tracking-wide text-muted-foreground"
+                >
+                  offline
+                </Badge>
               )}
               <MerchantStar
                 id={m.id}
@@ -195,23 +255,34 @@ function MerchantRow({
               <span className="font-mono tabular-nums">
                 {m.adCount} ad{m.adCount === 1 ? "" : "s"}
               </span>
+              {(m.buyAds > 0 || m.sellAds > 0) && (
+                <>
+                  <span>·</span>
+                  <span>
+                    {/* BUY-type ads (merchant bidding) = retail sell context → red.
+                        SELL-type ads (merchant offering) = retail buy context → green. */}
+                    {m.buyAds > 0 && (
+                      <span className="text-[color:var(--color-sell)]">
+                        {m.buyAds}B
+                      </span>
+                    )}
+                    {m.buyAds > 0 && m.sellAds > 0 && (
+                      <span className="text-muted-foreground/40"> / </span>
+                    )}
+                    {m.sellAds > 0 && (
+                      <span className="text-[color:var(--color-buy)]">
+                        {m.sellAds}S
+                      </span>
+                    )}
+                  </span>
+                </>
+              )}
               <span>·</span>
-              <span>
-                {/* BUY-type ads (merchant bidding) = retail sell context → red.
-                    SELL-type ads (merchant offering) = retail buy context → green. */}
-                {m.buyAds > 0 && (
-                  <span className="text-[color:var(--color-sell)]">
-                    {m.buyAds}B
-                  </span>
-                )}
-                {m.buyAds > 0 && m.sellAds > 0 && (
-                  <span className="text-muted-foreground/40"> / </span>
-                )}
-                {m.sellAds > 0 && (
-                  <span className="text-[color:var(--color-buy)]">
-                    {m.sellAds}S
-                  </span>
-                )}
+              <span
+                className="font-mono text-[10px] tabular-nums text-muted-foreground/70"
+                title={m.id}
+              >
+                {m.id.slice(0, 8)}…
               </span>
             </div>
           </div>
@@ -268,6 +339,16 @@ function MerchantRow({
         {formatDuration(m.avgReleaseSec)}
       </TableCell>
 
+      <TableCell className="py-3 text-right text-[12px] text-muted-foreground">
+        {m.isActive ? (
+          <span className="font-mono text-[color:var(--color-buy)]">now</span>
+        ) : (
+          <span className="font-mono tabular-nums">
+            {formatRelative(new Date(m.lastSeenTs * 1000))}
+          </span>
+        )}
+      </TableCell>
+
       <TableCell className="py-3">
         <div className="flex flex-wrap gap-1">
           {m.payMethods.slice(0, 3).map((pm) => (
@@ -286,6 +367,9 @@ function MerchantRow({
             >
               +{m.payMethods.length - 3}
             </Badge>
+          )}
+          {m.payMethods.length === 0 && (
+            <span className="text-[10px] text-muted-foreground/60">—</span>
           )}
         </div>
         <span className="sr-only">{asset}</span>
