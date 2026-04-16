@@ -1,23 +1,198 @@
-import { LineChart } from "lucide-react";
-import { ComingSoon } from "@/components/shell/coming-soon";
+import { Topbar } from "@/components/shell/topbar";
+import { SectionHeader } from "@/components/common/section-header";
+import { LiveDot } from "@/components/common/live-dot";
+import { Reveal } from "@/components/common/reveal";
+import { Card, CardContent } from "@/components/ui/card";
+import { Stat } from "@/components/common/stat";
+import {
+  listMarketSnapshots,
+  marketSummary,
+  listTrackedMarkets,
+  RANGES,
+  type RangeKey,
+} from "@/lib/db/queries";
+import { ASSETS, FIATS, getFiat } from "@/lib/constants";
+import { FilterBar, type FilterState } from "@/components/market/filter-bar";
+import { PriceChart } from "@/components/historical/price-chart";
+import { DepthChart } from "@/components/historical/depth-chart";
+import { PriceDistribution } from "@/components/historical/price-distribution";
+import { RangeTabs } from "@/components/historical/range-tabs";
+import { Empty } from "@/components/common/empty";
+import { Clock } from "lucide-react";
+import { formatCompact, formatFiat, formatPct } from "@/lib/format";
 
 export const metadata = { title: "Historical" };
+export const dynamic = "force-dynamic";
 
-export default function HistoricalPage() {
+type SP = Promise<Record<string, string | string[] | undefined>>;
+
+function parseFilters(
+  sp: Record<string, string | string[] | undefined>,
+): FilterState {
+  const asset = String(sp.asset ?? "USDT").toUpperCase();
+  const fiat = String(sp.fiat ?? "LKR").toUpperCase();
+  return {
+    asset: (ASSETS as readonly string[]).includes(asset) ? asset : "USDT",
+    fiat: FIATS.some((f) => f.code === fiat) ? fiat : "LKR",
+    payType: "",
+    merchantType: "all",
+  };
+}
+
+export default async function HistoricalPage({
+  searchParams,
+}: {
+  searchParams: SP;
+}) {
+  const sp = await searchParams;
+  const filters = parseFilters(sp);
+  const rangeKey = String(sp.range ?? "24h") as RangeKey;
+  const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
+
+  const snapshots = listMarketSnapshots(filters.asset, filters.fiat, range);
+  const summary = marketSummary(filters.asset, filters.fiat, range);
+  const tracked = listTrackedMarkets("30d");
+
+  const fiat = getFiat(filters.fiat);
+  const symbol = fiat?.symbol ?? filters.fiat;
+  const subtitle = `${filters.asset} / ${filters.fiat}${fiat ? ` · ${fiat.name}` : ""}`;
+
+  const mids = snapshots
+    .map((s) => s.mid)
+    .filter((v): v is number => v != null);
+
+  const latest = snapshots[snapshots.length - 1];
+  const first = snapshots[0];
+
+  const change =
+    first?.mid != null && latest?.mid != null
+      ? (latest.mid - first.mid) / first.mid
+      : null;
+
   return (
-    <ComingSoon
-      title="Historical analytics"
-      subtitle="Coming in v2"
-      icon={LineChart}
-      description="Track Binance P2P prices over time — hourly, daily and weekly averages, premium vs spot, volatility by payment rail, and candle-style charts for individual markets."
-      bullets={[
-        "Hourly / daily / weekly price series per market",
-        "Premium vs Binance spot price over time",
-        "Volatility by fiat and payment method",
-        "Moving averages (MA20 / MA100 / MA200)",
-        "Candle-style and line charts",
-        "Price distribution — not just top-of-book",
-      ]}
-    />
+    <>
+      <Topbar title="Historical" subtitle={subtitle}>
+        <LiveDot label="Ingesting" className="hidden sm:inline-flex" />
+      </Topbar>
+
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+        <SectionHeader
+          kicker="Time series"
+          title={`${filters.asset}/${filters.fiat} over ${range}`}
+          description="Prices, spreads and depth captured by the ingest worker every 5 minutes on Vercel Cron (or locally via npm run ingest:loop)."
+          right={<RangeTabs value={range} />}
+        />
+
+        <FilterBar initial={filters} />
+
+        {snapshots.length === 0 ? (
+          <Empty
+            icon={Clock}
+            title="No history for this market yet"
+            description={
+              tracked.length === 0
+                ? "The ingest worker hasn't run. Start it with `npm run ingest:loop` to accumulate snapshots, or deploy and let Vercel Cron tick every 5 minutes."
+                : `Tracked markets: ${tracked.map((t) => `${t.asset}/${t.fiat}`).join(", ")}. Switch the filter to one of those.`
+            }
+          />
+        ) : (
+          <>
+            <Reveal>
+              <Card className="border-border bg-card/60">
+                <CardContent className="grid grid-cols-2 gap-x-6 gap-y-5 p-5 md:grid-cols-4">
+                  <Stat
+                    label="Current mid"
+                    value={
+                      latest?.mid != null
+                        ? formatFiat(latest.mid, symbol, 2)
+                        : "—"
+                    }
+                    delta={
+                      change != null
+                        ? { value: change, format: "pct" }
+                        : undefined
+                    }
+                    footnote={`${snapshots.length} ticks in range`}
+                  />
+                  <Stat
+                    label={`${range} average`}
+                    value={
+                      summary?.avgMid != null
+                        ? formatFiat(summary.avgMid, symbol, 2)
+                        : "—"
+                    }
+                    footnote={
+                      summary?.minMid != null && summary?.maxMid != null
+                        ? `${formatFiat(summary.minMid, symbol, 2)} – ${formatFiat(summary.maxMid, symbol, 2)}`
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Average spread"
+                    value={
+                      summary?.avgSpreadPct != null
+                        ? formatPct(summary.avgSpreadPct, { frac: 2 })
+                        : "—"
+                    }
+                    footnote="Ask − Bid, mean"
+                  />
+                  <Stat
+                    label="Average depth"
+                    value={
+                      summary?.avgBidDepth != null &&
+                      summary?.avgAskDepth != null
+                        ? `${formatCompact(summary.avgBidDepth + summary.avgAskDepth)} ${filters.asset}`
+                        : "—"
+                    }
+                    footnote="Top-20 bid+ask"
+                  />
+                </CardContent>
+              </Card>
+            </Reveal>
+
+            <Reveal delay={70}>
+              <PriceChart
+                points={snapshots.map((s) => ({
+                  ts: s.ts,
+                  bid: s.bestBid,
+                  ask: s.bestAsk,
+                  mid: s.mid,
+                  spreadPct: s.spreadPct,
+                  bidDepth: s.bidDepth,
+                  askDepth: s.askDepth,
+                }))}
+                symbol={symbol}
+                asset={filters.asset}
+              />
+            </Reveal>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Reveal delay={110}>
+                <DepthChart
+                  points={snapshots.map((s) => ({
+                    ts: s.ts,
+                    bid: s.bestBid,
+                    ask: s.bestAsk,
+                    mid: s.mid,
+                    spreadPct: s.spreadPct,
+                    bidDepth: s.bidDepth,
+                    askDepth: s.askDepth,
+                  }))}
+                  asset={filters.asset}
+                />
+              </Reveal>
+              <Reveal delay={140}>
+                <PriceDistribution mids={mids} symbol={symbol} />
+              </Reveal>
+            </div>
+
+            <div className="pt-1 text-[11px] text-muted-foreground">
+              {snapshots.length} snapshots since{" "}
+              {first ? new Date(first.ts * 1000).toLocaleString() : "—"}
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 }

@@ -1,0 +1,199 @@
+import { db, schema } from "./client";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import type {
+  MarketSnapshotRow,
+  MerchantSnapshotRow,
+} from "./schema";
+
+/** ── Time ranges ─────────────────────────────────────────────────────── */
+
+export const RANGES = {
+  "1h": 60 * 60,
+  "6h": 6 * 60 * 60,
+  "24h": 24 * 60 * 60,
+  "7d": 7 * 24 * 60 * 60,
+  "30d": 30 * 24 * 60 * 60,
+} as const;
+
+export type RangeKey = keyof typeof RANGES;
+
+export function rangeSinceSeconds(range: RangeKey): number {
+  const now = Math.floor(Date.now() / 1000);
+  return now - RANGES[range];
+}
+
+/** ── Market queries ──────────────────────────────────────────────────── */
+
+export function listMarketSnapshots(
+  asset: string,
+  fiat: string,
+  range: RangeKey,
+): MarketSnapshotRow[] {
+  const since = rangeSinceSeconds(range);
+  return db
+    .select()
+    .from(schema.marketSnapshots)
+    .where(
+      and(
+        eq(schema.marketSnapshots.asset, asset),
+        eq(schema.marketSnapshots.fiat, fiat),
+        gte(schema.marketSnapshots.ts, since),
+      ),
+    )
+    .orderBy(asc(schema.marketSnapshots.ts))
+    .all();
+}
+
+export function latestMarketSnapshot(
+  asset: string,
+  fiat: string,
+): MarketSnapshotRow | undefined {
+  return db
+    .select()
+    .from(schema.marketSnapshots)
+    .where(
+      and(
+        eq(schema.marketSnapshots.asset, asset),
+        eq(schema.marketSnapshots.fiat, fiat),
+      ),
+    )
+    .orderBy(desc(schema.marketSnapshots.ts))
+    .limit(1)
+    .get();
+}
+
+/** Summary stats from the last `range` window. */
+export function marketSummary(
+  asset: string,
+  fiat: string,
+  range: RangeKey,
+) {
+  const since = rangeSinceSeconds(range);
+  const rows = db
+    .select({
+      count: sql<number>`count(*)`.as("c"),
+      avgMid: sql<number | null>`avg(${schema.marketSnapshots.mid})`.as("avg_mid"),
+      minMid: sql<number | null>`min(${schema.marketSnapshots.mid})`.as("min_mid"),
+      maxMid: sql<number | null>`max(${schema.marketSnapshots.mid})`.as("max_mid"),
+      avgSpreadPct: sql<number | null>`avg(${schema.marketSnapshots.spreadPct})`.as(
+        "avg_spread",
+      ),
+      avgBidDepth: sql<number | null>`avg(${schema.marketSnapshots.bidDepth})`.as(
+        "avg_bid_depth",
+      ),
+      avgAskDepth: sql<number | null>`avg(${schema.marketSnapshots.askDepth})`.as(
+        "avg_ask_depth",
+      ),
+    })
+    .from(schema.marketSnapshots)
+    .where(
+      and(
+        eq(schema.marketSnapshots.asset, asset),
+        eq(schema.marketSnapshots.fiat, fiat),
+        gte(schema.marketSnapshots.ts, since),
+      ),
+    )
+    .all();
+  return rows[0];
+}
+
+/** All markets with at least one snapshot in the given range. */
+export function listTrackedMarkets(range: RangeKey = "24h") {
+  const since = rangeSinceSeconds(range);
+  return db
+    .select({
+      asset: schema.marketSnapshots.asset,
+      fiat: schema.marketSnapshots.fiat,
+      count: sql<number>`count(*)`,
+      lastTs: sql<number>`max(${schema.marketSnapshots.ts})`,
+    })
+    .from(schema.marketSnapshots)
+    .where(gte(schema.marketSnapshots.ts, since))
+    .groupBy(schema.marketSnapshots.asset, schema.marketSnapshots.fiat)
+    .orderBy(asc(schema.marketSnapshots.asset), asc(schema.marketSnapshots.fiat))
+    .all();
+}
+
+/** ── Merchant queries ────────────────────────────────────────────────── */
+
+export function merchantHistory(
+  merchantId: string,
+  asset: string,
+  fiat: string,
+  range: RangeKey,
+): MerchantSnapshotRow[] {
+  const since = rangeSinceSeconds(range);
+  return db
+    .select()
+    .from(schema.merchantSnapshots)
+    .where(
+      and(
+        eq(schema.merchantSnapshots.merchantId, merchantId),
+        eq(schema.merchantSnapshots.asset, asset),
+        eq(schema.merchantSnapshots.fiat, fiat),
+        gte(schema.merchantSnapshots.ts, since),
+      ),
+    )
+    .orderBy(asc(schema.merchantSnapshots.ts))
+    .all();
+}
+
+/** Merchants that appeared in the current tick of a market. */
+export function merchantsInLatestTick(
+  asset: string,
+  fiat: string,
+): MerchantSnapshotRow[] {
+  const latest = db
+    .select({ ts: sql<number>`max(${schema.merchantSnapshots.ts})` })
+    .from(schema.merchantSnapshots)
+    .where(
+      and(
+        eq(schema.merchantSnapshots.asset, asset),
+        eq(schema.merchantSnapshots.fiat, fiat),
+      ),
+    )
+    .get();
+  if (!latest?.ts) return [];
+
+  return db
+    .select()
+    .from(schema.merchantSnapshots)
+    .where(
+      and(
+        eq(schema.merchantSnapshots.asset, asset),
+        eq(schema.merchantSnapshots.fiat, fiat),
+        eq(schema.merchantSnapshots.ts, latest.ts),
+      ),
+    )
+    .all();
+}
+
+/** Distinct merchant-ids seen in a window, with counts and last price. */
+export function merchantChurnWindow(
+  asset: string,
+  fiat: string,
+  range: RangeKey,
+) {
+  const since = rangeSinceSeconds(range);
+  return db
+    .select({
+      merchantId: schema.merchantSnapshots.merchantId,
+      merchantName: schema.merchantSnapshots.merchantName,
+      firstTs: sql<number>`min(${schema.merchantSnapshots.ts})`.as("first_ts"),
+      lastTs: sql<number>`max(${schema.merchantSnapshots.ts})`.as("last_ts"),
+      ticks: sql<number>`count(*)`.as("ticks"),
+      avgCompletion: sql<number>`avg(${schema.merchantSnapshots.completionRate})`.as(
+        "avg_completion",
+      ),
+    })
+    .from(schema.merchantSnapshots)
+    .where(
+      and(
+        eq(schema.merchantSnapshots.asset, asset),
+        eq(schema.merchantSnapshots.fiat, fiat),
+        gte(schema.merchantSnapshots.ts, since),
+      ),
+    )
+    .groupBy(schema.merchantSnapshots.merchantId)
+    .all();
+}
