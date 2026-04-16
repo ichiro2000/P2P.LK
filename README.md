@@ -8,7 +8,7 @@ Dark-first, data-dense, production-ready.
 
 - Next.js 16 (App Router) · React 19 · TypeScript
 - Tailwind CSS v4 · shadcn/ui (Base UI) · Recharts · Lucide
-- libSQL (local file + Turso-ready) · Drizzle ORM · `tsx` for CLI scripts
+- Postgres (Supabase) · Drizzle ORM · `postgres-js` · `tsx` for CLI scripts
 - Data source: Binance P2P public endpoint (no auth required)
 
 ## Features
@@ -51,34 +51,37 @@ Dark-first, data-dense, production-ready.
 ## Development
 
 ```bash
+cp .env.example .env.local       # paste your Supabase Transaction pooler URL
 npm install
-npm run dev              # http://localhost:3000
+npm run dev                       # http://localhost:3000
 
 # One-shot ingest (writes a snapshot for all tracked markets)
 npm run ingest
 
-# Continuous local ingest (replaces Vercel Cron in dev)
-npm run ingest:loop      # every 120s, Ctrl-C to stop
+# Continuous local ingest
+npm run ingest:loop               # every 120s, Ctrl-C to stop
 
 # One specific market
 npm run ingest -- USDT:LKR
 ```
 
-The libSQL DB lives at `data/p2p.db` (gitignored) and is bootstrapped on
-first connection — no manual migration step.
+Tables bootstrap themselves on first DB connection — no manual migration
+step. Both `next dev` and the CLI pick up `.env.local` automatically.
 
 ## Production
 
-Vercel + Turso is the default path. Set `DATABASE_URL`,
-`DATABASE_AUTH_TOKEN` and `CRON_SECRET` — everything else works out of the
-box. See [DEPLOY.md](./DEPLOY.md) for the full walkthrough.
+DigitalOcean App Platform + Supabase is the canonical deploy. The app spec
+at `.do/app.yaml` provisions a web service and an ingest worker; only
+`DATABASE_URL` needs to be pasted as a secret in the DO dashboard. Full
+walkthrough in [DEPLOY.md](./DEPLOY.md).
 
 ## Architecture
 
 **Data**
 - `lib/binance.ts` — Binance P2P fetcher with URL-cached ISR.
-- `lib/ingest.ts` — Captures snapshots into SQLite (markets + merchants).
-- `lib/db/{schema,client,queries}.ts` — Drizzle schema, singleton handle, query helpers.
+- `lib/ingest.ts` — Captures snapshots into Postgres (markets + merchants).
+- `lib/db/{schema,client,queries}.ts` — Drizzle schema, postgres-js client
+  (with `prepare: false` for Supabase's transaction pooler), query helpers.
 - `lib/risk.ts` — Anomaly detection from the time-series.
 - `lib/analytics.ts` — Spread, arbitrage, merchant trust scoring.
 - `lib/stats.ts` — SMA, z-score, histogram.

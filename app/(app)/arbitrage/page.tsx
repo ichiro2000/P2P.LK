@@ -8,6 +8,7 @@ import { ArbitragePanel } from "@/components/arbitrage/arbitrage-panel";
 import type { MarketSnapshot } from "@/lib/types";
 
 export const revalidate = 30;
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Arbitrage",

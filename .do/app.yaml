@@ -1,0 +1,73 @@
+# DigitalOcean App Platform spec for P2P.LK
+#
+# Two components:
+#   web     — Next.js app (public HTTP)
+#   ingest  — long-running Node process that ticks every 5 minutes
+#
+# Deploy with:
+#   doctl apps create --spec .do/app.yaml
+# Or via the DO dashboard: Apps → Create App → From source → pick this repo,
+# then paste this file when prompted for the "App Spec" override.
+#
+# SECRETS to add after creation (Dashboard → Settings → App-Level Env Vars):
+#   DATABASE_URL    — Supabase Transaction pooler (port 6543) connection string
+#   CRON_SECRET     — random string (openssl rand -hex 32). Optional — only
+#                     needed if you want to hit /api/cron/snapshot by hand.
+# Both should be type: SECRET and scope: RUN_TIME.
+
+name: p2p-lk
+region: sfo
+features:
+  - buildpack-stack=ubuntu-22
+
+# App-level envs are injected into every component. Values left empty are
+# placeholders — add real values in the DO dashboard or via `doctl`.
+envs:
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    type: SECRET
+  - key: CRON_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  - key: NODE_ENV
+    scope: RUN_TIME
+    value: production
+
+services:
+  - name: web
+    github:
+      repo: ichiro2000/P2P.LK
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: node-js
+    build_command: npm ci && npm run build
+    run_command: npm start
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: basic-xs
+    routes:
+      - path: /
+    health_check:
+      http_path: /
+      initial_delay_seconds: 30
+      period_seconds: 30
+      timeout_seconds: 10
+      success_threshold: 1
+      failure_threshold: 5
+
+workers:
+  # One-process scheduler that replaces cron: runs ingest every N seconds in
+  # a loop. Cheaper and simpler than spinning up an entire cron job, and the
+  # existing `scripts/ingest.ts --loop` is already hardened for this.
+  - name: ingest
+    github:
+      repo: ichiro2000/P2P.LK
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: node-js
+    build_command: npm ci
+    run_command: tsx scripts/ingest.ts --loop --every=300
+    instance_count: 1
+    instance_size_slug: basic-xxs

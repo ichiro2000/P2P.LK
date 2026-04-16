@@ -1,20 +1,26 @@
 import {
-  integer,
-  real,
-  sqliteTable,
-  text,
+  bigint,
+  boolean,
   index,
-} from "drizzle-orm/sqlite-core";
+  integer,
+  pgTable,
+  real,
+  serial,
+  text,
+} from "drizzle-orm/pg-core";
 
 /**
- * One row per market per capture tick.
- * `ts` is stored as unix seconds (cheaper than ISO strings for range queries).
+ * Postgres schema. `ts` is stored as BIGINT unix seconds so queries over
+ * large time windows stay integer-only and index-friendly. We could use
+ * timestamptz, but bigint-seconds keeps the data layer portable (the ingest
+ * tool speaks seconds too) and shaves a few milliseconds on range scans.
  */
-export const marketSnapshots = sqliteTable(
+
+export const marketSnapshots = pgTable(
   "market_snapshots",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    ts: integer("ts").notNull(), // unix seconds
+    id: serial("id").primaryKey(),
+    ts: bigint("ts", { mode: "number" }).notNull(),
     asset: text("asset").notNull(),
     fiat: text("fiat").notNull(),
 
@@ -32,7 +38,7 @@ export const marketSnapshots = sqliteTable(
     bidCount: integer("bid_count"),
     askCount: integer("ask_count"),
 
-    bidDepth: real("bid_depth"), // asset units
+    bidDepth: real("bid_depth"),
     askDepth: real("ask_depth"),
     bidDepthFiat: real("bid_depth_fiat"),
     askDepthFiat: real("ask_depth_fiat"),
@@ -43,22 +49,17 @@ export const marketSnapshots = sqliteTable(
   ],
 );
 
-/**
- * One row per (merchant × market × capture). Captures what a merchant was
- * doing at a point in time — used for churn, reliability and anomaly
- * detection over longer windows.
- */
-export const merchantSnapshots = sqliteTable(
+export const merchantSnapshots = pgTable(
   "merchant_snapshots",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    ts: integer("ts").notNull(),
+    id: serial("id").primaryKey(),
+    ts: bigint("ts", { mode: "number" }).notNull(),
     asset: text("asset").notNull(),
     fiat: text("fiat").notNull(),
 
     merchantId: text("merchant_id").notNull(),
     merchantName: text("merchant_name").notNull(),
-    isMerchant: integer("is_merchant", { mode: "boolean" }),
+    isMerchant: boolean("is_merchant"),
     ordersMonth: integer("orders_month"),
     completionRate: real("completion_rate"),
     avgReleaseSec: integer("avg_release_sec"),

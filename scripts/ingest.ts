@@ -3,9 +3,19 @@
  *
  *   npm run ingest               # one capture for all DEFAULT_ARB_FIATS
  *   npm run ingest -- USDT:LKR   # one-off single market
- *   npm run ingest -- --loop     # run every 60s until SIGINT (dev replacement for Vercel Cron)
+ *   npm run ingest -- --loop     # run forever (used by the DO worker component)
  *   npm run ingest -- --loop --every=300  # run every N seconds
+ *
+ * Loads .env.local / .env automatically so DATABASE_URL is available without
+ * the caller exporting it to the shell.
  */
+import "dotenv/config";
+import { config as loadEnv } from "dotenv";
+import path from "node:path";
+
+// dotenv/config loads .env by default. Also try .env.local for Next.js parity.
+loadEnv({ path: path.resolve(process.cwd(), ".env.local"), override: false });
+
 import { runIngest, type IngestMarket } from "../lib/ingest";
 
 function parseArgs(argv: string[]) {

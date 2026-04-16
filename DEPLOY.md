@@ -1,121 +1,128 @@
-# Deploying P2P.LK
+# Deploying P2P.LK to DigitalOcean + Supabase
 
-This guide walks you from a local dev checkout to a publicly accessible
-instance with a scheduled ingest worker. The recommended stack is
-**Vercel + Turso**; alternatives are noted at the end.
+This is the canonical deploy path: **DigitalOcean App Platform** for the web
+service and ingest worker, **Supabase** (Postgres) for the data. End-to-end
+the setup takes about 15 minutes; no code changes required.
 
-## 1 · Provision a Turso database
+## 1 · Grab your Supabase connection string
 
-Turso speaks libSQL (SQLite-compatible) and is what `lib/db/client.ts`
-already uses. Sign up at [turso.tech](https://turso.tech) and:
+1. Open your Supabase project.
+2. **Settings → Database → Connection string**.
+3. Pick the **Transaction pooler** tab (port `6543`). Copy the `URI` form —
+   it looks like:
+   ```
+   postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+   ```
+4. Replace `[YOUR-PASSWORD]` with the database password you set when the
+   project was created.
 
-```bash
-# Install the CLI once
-brew install turso  # or: curl -sSfL https://get.tur.so/install.sh | bash
+> Why transaction pooler? App Platform containers are long-lived but we
+> still want the pooler's connection limits and resilience. The client
+> is configured with `prepare: false` to work around the pooler's lack of
+> prepared-statement support — see `lib/db/client.ts`.
 
-# Authenticate
-turso auth signup   # or: turso auth login
-
-# Create the database (name can be anything)
-turso db create p2p-lk
-
-# Copy the URL (looks like libsql://p2p-lk-<you>.turso.io)
-turso db show p2p-lk --url
-
-# Mint an auth token — save this, you won't see it again
-turso db tokens create p2p-lk
-```
-
-Schema bootstraps itself on first connection — no migration command needed.
-
-## 2 · Push the repo to Vercel
+## 2 · (Optional) Smoke-test locally
 
 ```bash
-# From the repo root
-vercel link      # link to a new or existing Vercel project
+cp .env.example .env.local
+# paste the Supabase URL into DATABASE_URL
+npm install
+npm run ingest -- USDT:LKR    # one capture — creates tables on first run
+npm run dev                    # http://localhost:3000
 ```
 
-Add the env vars in the Vercel dashboard (or via CLI):
+You should see the LKR market on the homepage and one tick appear in
+Historical. If this works, the deploy will too.
 
-| Key                   | Value                                                  | Scope     |
-|-----------------------|--------------------------------------------------------|-----------|
-| `DATABASE_URL`        | `libsql://p2p-lk-<you>.turso.io`                       | All       |
-| `DATABASE_AUTH_TOKEN` | Token from `turso db tokens create p2p-lk`             | All       |
-| `CRON_SECRET`         | A long random string (`openssl rand -hex 32`)          | Production|
+## 3 · Provision the App Platform app
+
+Option A — **CLI** (fastest if you already have `doctl`):
 
 ```bash
-# CLI equivalents (pick one path):
-vercel env add DATABASE_URL production
-vercel env add DATABASE_AUTH_TOKEN production
-vercel env add CRON_SECRET production
+doctl auth init                         # one-time
+doctl apps create --spec .do/app.yaml   # creates app, kicks off a build
 ```
 
-Deploy:
+Option B — **Dashboard**:
+
+1. DigitalOcean → Apps → **Create App** → GitHub → pick `ichiro2000/P2P.LK`,
+   branch `main`.
+2. When the detection screen appears, click **Edit your app spec** and paste
+   the contents of `.do/app.yaml`. Save.
+3. Continue through to deploy.
+
+Either path creates two components:
+
+| Component | Kind    | What it runs                               | Size        |
+|-----------|---------|--------------------------------------------|-------------|
+| `web`     | Service | `next start` on port 3000                  | basic-xs    |
+| `ingest`  | Worker  | `tsx scripts/ingest.ts --loop --every=300` | basic-xxs   |
+
+## 4 · Add secrets
+
+The app won't finish deploying without `DATABASE_URL`. In the DO dashboard:
+
+1. **Your app → Settings → App-Level Env Vars → Edit**.
+2. Add the following (**Encrypt** checked on both):
+   - `DATABASE_URL` — the Supabase Transaction pooler URI from step 1.
+   - `CRON_SECRET` — a random string, `openssl rand -hex 32`. Optional; only
+     needed if you intend to curl `/api/cron/snapshot` manually.
+3. **Save** — App Platform redeploys with the new values.
+
+CLI equivalent:
 
 ```bash
-vercel --prod
+doctl apps update <APP_ID> --spec .do/app.yaml
+# then go to the dashboard to paste the actual secret values, or use:
+doctl apps config set <APP_ID> --env DATABASE_URL="postgresql://..." --encrypt
+doctl apps config set <APP_ID> --env CRON_SECRET="$(openssl rand -hex 32)" --encrypt
 ```
 
-## 3 · Cron turns itself on
+## 5 · Verify
 
-`vercel.json` is already configured:
+1. **Build logs** — both `web` and `ingest` should finish green. The ingest
+   log will start printing lines like:
+   ```
+   [2026-04-16 13:26:35] ingest ok — markets=8/10 rows=10+282 in 3403ms
+   ```
+2. **App URL** — open it, `/` should render live LKR data within a few
+   seconds.
+3. **Supabase** — in the SQL editor, run:
+   ```sql
+   SELECT count(*) FROM market_snapshots;
+   SELECT count(*) FROM merchant_snapshots;
+   ```
+   Both should grow every 5 minutes.
+4. **Historical / Risk / Liquidity / Reports → Recap** — these need a few
+   ticks of data before they leave the empty state. Ten minutes after
+   deploy they'll start filling in.
 
-```json
-{
-  "crons": [
-    { "path": "/api/cron/snapshot", "schedule": "*/5 * * * *" }
-  ]
-}
-```
+## 6 · Custom domain (optional)
 
-Vercel auto-attaches `Authorization: Bearer $CRON_SECRET` when hitting cron
-endpoints, which is what `/api/cron/snapshot` checks for. As soon as the
-deployment is live, snapshots start landing in Turso every five minutes.
+- **Your app → Settings → Domains → Add Domain**.
+- Point your domain's DNS at the `CNAME` DO gives you.
+- DO issues a free Let's Encrypt cert automatically.
 
-You can verify manually:
+## Common gotchas
 
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" \
-  https://<your-app>.vercel.app/api/cron/snapshot
-```
+- **Worker crashing with "DATABASE_URL is not set"** — App-level envs weren't
+  saved, or they're scoped to the wrong environment. In the dashboard,
+  expand the var row and confirm **Scope: Run Time** on both.
+- **Build fails on `tsx: command not found`** — `tsx` is intentionally a
+  runtime dependency. If you see this, the worker's `build_command` ran
+  `npm install --production` somehow; ensure the spec's build command is
+  `npm ci` (which installs all deps).
+- **Transaction pooler errors about prepared statements** — double-check
+  the URL uses port **6543**, not 5432, and that you haven't swapped
+  `prepare: false` out of `lib/db/client.ts`.
+- **Ingest errors on Binance 429** — public feed throttling. The worker
+  swallows per-market errors and retries on the next tick; no action
+  needed unless it persists.
 
-## 4 · First data
+## Costs, ballpark
 
-The first render of **Historical**, **Risk**, **Reports → Recap** and the
-depth heatmap on **Liquidity** will show the "no history yet" empty state
-until a few cron ticks have run. Either wait ~15 minutes or hit the cron
-endpoint manually to seed the DB.
+- `basic-xs` web (1GB RAM): **$12/mo**
+- `basic-xxs` worker (512MB): **$5/mo**
+- Supabase free tier covers the DB until you exceed 500MB or 2 GB egress.
 
-## 5 · Local development is unchanged
-
-If you don't set `DATABASE_URL`, `lib/db/client.ts` falls back to a local
-libSQL file at `data/p2p.db`. All scripts still work:
-
-```bash
-npm run dev              # the app
-npm run ingest           # one capture
-npm run ingest:loop      # continuous capture (replaces cron locally)
-```
-
-You can even mix modes — set `DATABASE_URL` locally to point at Turso and
-develop against the production DB.
-
-## Alternative hosts
-
-- **Railway / Render / Fly** — long-running Node runtimes are a great fit.
-  Skip Turso and use a persistent volume: set `DATABASE_URL=file:/data/p2p.db`
-  mounted to your volume. No schema changes required.
-- **Cloudflare Workers** — not currently supported. `@libsql/client` has a
-  web build, but Workers can't run our Node-based ingest script and we use
-  Node-only APIs in a few spots.
-
-## Troubleshooting
-
-- **Cron returns 401** — `CRON_SECRET` doesn't match or isn't set for the
-  production environment.
-- **Historical page empty after deploy** — first cron hasn't fired. Check
-  the Vercel "Cron" tab to confirm the job is scheduled, then trigger it
-  once manually to seed.
-- **429 / captcha from Binance** — the public feed occasionally throttles.
-  `fetchBothSides` already swallows errors per-market so the whole ingest
-  tick doesn't fail; missed markets retry on the next tick.
+Under $20/mo for a comfortably running production instance.

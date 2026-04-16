@@ -4,13 +4,16 @@ import { runIngest } from "@/lib/ingest";
 /**
  * Protected ingest endpoint.
  *
+ * On DigitalOcean App Platform we don't use this — the dedicated `ingest`
+ * worker (see .do/app.yaml) runs `scripts/ingest.ts --loop` continuously.
+ * This route is kept for manual triggers and for alternative hosts that
+ * prefer HTTP-driven cron (e.g. external schedulers).
+ *
  * Local dev — no auth required (CRON_SECRET unset).
- * Production — set CRON_SECRET and hit this from Vercel Cron with
- *   Authorization: Bearer $CRON_SECRET (Vercel adds this automatically for
- *   cron jobs defined in vercel.json).
+ * Production — set CRON_SECRET and pass it as `Authorization: Bearer …`.
  */
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs"; // better-sqlite3 is a native module
+export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {

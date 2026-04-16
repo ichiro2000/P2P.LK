@@ -1,120 +1,141 @@
-import { drizzle } from "drizzle-orm/libsql";
-import { createClient, type Client } from "@libsql/client";
-import path from "node:path";
-import fs from "node:fs";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import * as schema from "./schema";
 
 /**
- * Single async driver: libSQL.
+ * Postgres driver. Targets Supabase by default but works with any Postgres
+ * endpoint via `DATABASE_URL`.
  *
- * - Locally (no env vars): uses a file at data/p2p.db — libSQL is SQLite-
- *   compatible, so `npm run dev` has zero extra setup.
- * - On Vercel / remote: set DATABASE_URL (e.g. Turso) and optionally
- *   DATABASE_AUTH_TOKEN. The same Drizzle schema and queries work unchanged.
+ * Transaction pooler note — Supabase's transaction pooler (port 6543) does
+ * NOT support prepared statements. We set `prepare: false` globally so every
+ * query runs as a simple query. Safe on session poolers and direct
+ * connections too; negligible perf cost for our workload.
  *
- * We cache the client on globalThis so Next.js hot-reloads don't leak
- * connections during dev.
+ * The client is cached on globalThis so Next.js hot-reloads during dev
+ * don't accumulate pool handles.
  */
-
-const DB_DIR = path.join(process.cwd(), "data");
-const LOCAL_DB_PATH = path.join(DB_DIR, "p2p.db");
-const LOCAL_URL = `file:${LOCAL_DB_PATH}`;
 
 declare global {
   // eslint-disable-next-line no-var
-  var __p2pClient: Client | undefined;
+  var __p2pSql: postgres.Sql | undefined;
   // eslint-disable-next-line no-var
-  var __p2pSchemaReady: boolean | undefined;
+  var __p2pSchemaReady: Promise<void> | undefined;
 }
 
-function resolveConfig() {
-  const envUrl = process.env.DATABASE_URL;
-  if (envUrl) {
-    return {
-      url: envUrl,
-      authToken: process.env.DATABASE_AUTH_TOKEN,
-    };
+function getClient(): postgres.Sql {
+  if (global.__p2pSql) return global.__p2pSql;
+
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is not set. Copy .env.example to .env.local and paste " +
+        "your Supabase connection string (Transaction pooler, port 6543).",
+    );
   }
-  fs.mkdirSync(DB_DIR, { recursive: true });
-  return { url: LOCAL_URL, authToken: undefined };
-}
 
-function getClient(): Client {
-  if (global.__p2pClient) return global.__p2pClient;
-  const cfg = resolveConfig();
-  global.__p2pClient = createClient(cfg);
-  return global.__p2pClient;
+  global.__p2pSql = postgres(url, {
+    // REQUIRED for Supabase transaction pooler — the pooler rejects prepared
+    // statements because it doesn't hold a server connection per client.
+    prepare: false,
+    // Keep the pool small. App Platform runs a handful of containers and we
+    // don't need more than a few connections per container.
+    max: 10,
+    idle_timeout: 20,
+    connect_timeout: 10,
+  });
+  return global.__p2pSql;
 }
 
 /**
- * Idempotent schema bootstrap. Runs once per process — gated behind a
- * globalThis flag so repeated imports (e.g. Next.js module re-eval) don't
- * re-issue the DDL on every request.
- *
- * For dev convenience we do this here rather than wiring drizzle-kit
- * migrations. In production, prefer a one-shot migration job.
+ * Idempotent schema bootstrap. Runs each DDL as its own simple query so it
+ * works through the transaction pooler. Cached as a single in-flight promise
+ * per process so concurrent requests don't race to create the same tables.
  */
-async function ensureSchema(client: Client) {
-  if (global.__p2pSchemaReady) return;
-  await client.executeMultiple(`
-    CREATE TABLE IF NOT EXISTS market_snapshots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ts INTEGER NOT NULL,
-      asset TEXT NOT NULL,
-      fiat TEXT NOT NULL,
-      best_bid REAL,
-      best_ask REAL,
-      mid REAL,
-      spread REAL,
-      spread_pct REAL,
-      median_bid REAL,
-      median_ask REAL,
-      vwap_bid REAL,
-      vwap_ask REAL,
-      bid_count INTEGER,
-      ask_count INTEGER,
-      bid_depth REAL,
-      ask_depth REAL,
-      bid_depth_fiat REAL,
-      ask_depth_fiat REAL
-    );
-    CREATE INDEX IF NOT EXISTS idx_market_ts ON market_snapshots (asset, fiat, ts);
-    CREATE INDEX IF NOT EXISTS idx_market_recent ON market_snapshots (ts);
+function ensureSchema(): Promise<void> {
+  if (global.__p2pSchemaReady) return global.__p2pSchemaReady;
 
-    CREATE TABLE IF NOT EXISTS merchant_snapshots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ts INTEGER NOT NULL,
-      asset TEXT NOT NULL,
-      fiat TEXT NOT NULL,
-      merchant_id TEXT NOT NULL,
-      merchant_name TEXT NOT NULL,
-      is_merchant INTEGER,
-      orders_month INTEGER,
-      completion_rate REAL,
-      avg_release_sec INTEGER,
-      buy_ads INTEGER,
-      sell_ads INTEGER,
-      best_buy_price REAL,
-      best_sell_price REAL,
-      total_available_fiat REAL
-    );
-    CREATE INDEX IF NOT EXISTS idx_merchant_ts ON merchant_snapshots (merchant_id, asset, fiat, ts);
-    CREATE INDEX IF NOT EXISTS idx_merchant_market ON merchant_snapshots (asset, fiat, ts);
-  `);
-  global.__p2pSchemaReady = true;
+  const c = getClient();
+  global.__p2pSchemaReady = (async () => {
+    const statements = [
+      `CREATE TABLE IF NOT EXISTS market_snapshots (
+        id             SERIAL PRIMARY KEY,
+        ts             BIGINT NOT NULL,
+        asset          TEXT NOT NULL,
+        fiat           TEXT NOT NULL,
+        best_bid       REAL,
+        best_ask       REAL,
+        mid            REAL,
+        spread         REAL,
+        spread_pct     REAL,
+        median_bid     REAL,
+        median_ask     REAL,
+        vwap_bid       REAL,
+        vwap_ask       REAL,
+        bid_count      INTEGER,
+        ask_count      INTEGER,
+        bid_depth      REAL,
+        ask_depth      REAL,
+        bid_depth_fiat REAL,
+        ask_depth_fiat REAL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_market_ts
+         ON market_snapshots (asset, fiat, ts)`,
+      `CREATE INDEX IF NOT EXISTS idx_market_recent
+         ON market_snapshots (ts)`,
+      `CREATE TABLE IF NOT EXISTS merchant_snapshots (
+        id                    SERIAL PRIMARY KEY,
+        ts                    BIGINT NOT NULL,
+        asset                 TEXT NOT NULL,
+        fiat                  TEXT NOT NULL,
+        merchant_id           TEXT NOT NULL,
+        merchant_name         TEXT NOT NULL,
+        is_merchant           BOOLEAN,
+        orders_month          INTEGER,
+        completion_rate       REAL,
+        avg_release_sec       INTEGER,
+        buy_ads               INTEGER,
+        sell_ads              INTEGER,
+        best_buy_price        REAL,
+        best_sell_price       REAL,
+        total_available_fiat  REAL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_merchant_ts
+         ON merchant_snapshots (merchant_id, asset, fiat, ts)`,
+      `CREATE INDEX IF NOT EXISTS idx_merchant_market
+         ON merchant_snapshots (asset, fiat, ts)`,
+    ];
+    for (const stmt of statements) {
+      await c.unsafe(stmt);
+    }
+  })();
+
+  // Swallow the error so we retry on next call (don't cache a rejected promise).
+  global.__p2pSchemaReady.catch(() => {
+    global.__p2pSchemaReady = undefined;
+  });
+
+  return global.__p2pSchemaReady;
 }
 
-const client = getClient();
+declare global {
+  // eslint-disable-next-line no-var
+  var __p2pDrizzle: ReturnType<typeof drizzle> | undefined;
+}
 
 /**
- * Exported as a Promise-returning helper. Call `await getDb()` at the top of
- * any query function. Schema is bootstrapped lazily on first use.
+ * Get a Drizzle handle with the schema guaranteed to exist. Call this at the
+ * top of every query function: `const db = await getDb();`
+ *
+ * The drizzle instance is created lazily so modules that don't touch the DB
+ * can still be imported without DATABASE_URL set (matters for build steps,
+ * tests and side-effect-free imports).
  */
 export async function getDb() {
-  await ensureSchema(client);
-  return db;
+  await ensureSchema();
+  if (!global.__p2pDrizzle) {
+    global.__p2pDrizzle = drizzle(getClient(), { schema });
+  }
+  return global.__p2pDrizzle;
 }
 
-export const db = drizzle(client, { schema });
 export { schema };
-export { LOCAL_DB_PATH as DB_PATH };
