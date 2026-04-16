@@ -1,32 +1,22 @@
 # DigitalOcean App Platform spec for P2P.LK
 #
-# Three pieces:
-#   web        — Next.js service (public HTTP)
-#   ingest     — long-running worker that ticks every 5 minutes
-#   databases  — attaches your existing DO Managed Postgres cluster
+# Provisions, in one command, everything we need:
+#   databases.db — NEW DigitalOcean Managed Postgres cluster (production, 1GB)
+#   services.web — Next.js app (public HTTP)
+#   workers.ingest — long-running worker ticking every 5 minutes
+#
+# The DATABASE_URL for both components is auto-wired from the attached
+# cluster. Nothing to paste; no secret to configure.
 #
 # Deploy:
-#   doctl apps create --spec .do/app.yaml
-# or Dashboard → Apps → Create App → From source → paste this file when
+#   doctl auth init                         # one-time
+#   doctl apps create --spec .do/app.yaml   # creates cluster + app
+#
+# Or Dashboard → Apps → Create App → From source → paste this file when
 # prompted to override the "App Spec".
 #
-# BEFORE YOU DEPLOY:
-#
-# 1. Replace <YOUR_CLUSTER_NAME> below with the name of the Managed Postgres
-#    cluster you already created. That attachment gives this app automatic
-#    trusted-sources access to the DB and a CA cert env var.
-#
-# 2. In your DB → "Connection Pools" → create one with:
-#       Mode: Transaction
-#       Pool size: 10 (or more, scale later)
-#    Copy its connection string (port 25061, URL includes ?sslmode=require).
-#
-# 3. After `doctl apps create`, go to Dashboard → Settings → App-Level
-#    Env Vars and set:
-#       DATABASE_URL = <paste the connection pool URL>   [Encrypt: on]
-#       CRON_SECRET  = openssl rand -hex 32              [Encrypt: on]
-#    The DATABASE_URL you set here overrides the one auto-injected from the
-#    attached cluster — we want the pool URL, not the direct one.
+# Provisioning the Managed Postgres cluster takes 3–5 minutes on first run;
+# the app components wait for it to come up before starting.
 
 name: p2p-lk
 region: sfo
@@ -37,22 +27,24 @@ databases:
   - name: db
     engine: PG
     version: "16"
-    cluster_name: <YOUR_CLUSTER_NAME>
+    production: true
+    size: db-s-1vcpu-1gb
+    num_nodes: 1
     db_name: defaultdb
     db_user: doadmin
-    production: true
 
-# App-level envs are injected into every component.
-# DATABASE_URL is intentionally a SECRET (no value here) so you can paste the
-# Transaction-pool URL via the dashboard — that value overrides the direct
-# ${db.DATABASE_URL} the attachment would otherwise expose.
+# App-level envs — injected into every component.
+# DATABASE_URL pulls the direct-connection URL from the attached cluster;
+# it's already SSL (sslmode=require) and correctly scoped to the app's
+# trusted-sources firewall rule.
+#
+# If later on you want to add a Transaction connection pool (recommended
+# once traffic grows), create one in the DB dashboard and override
+# DATABASE_URL in Settings → App-Level Env Vars (mark it SECRET + Encrypt).
 envs:
   - key: DATABASE_URL
     scope: RUN_TIME
-    type: SECRET
-  - key: CRON_SECRET
-    scope: RUN_TIME
-    type: SECRET
+    value: ${db.DATABASE_URL}
   - key: NODE_ENV
     scope: RUN_TIME
     value: production
@@ -81,9 +73,9 @@ services:
       failure_threshold: 5
 
 workers:
-  # Long-running scheduler: runs the ingest every 5 minutes. Simpler and
-  # cheaper than wiring an external cron, and the existing --loop script is
-  # already hardened for it (per-market error isolation, exit on SIGINT).
+  # Long-running scheduler: runs the ingest every 5 minutes. Cheaper and
+  # simpler than wiring an external cron, and the --loop script is already
+  # hardened for this (per-market error isolation, SIGINT handling).
   - name: ingest
     github:
       repo: ichiro2000/P2P.LK
