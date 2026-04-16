@@ -80,15 +80,13 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/alerts",
         label: "Alerts",
         icon: Bell,
-        soon: true,
-        description: "Price, spread and merchant alerts",
+        description: "Price, spread and depth rules",
       },
       {
         href: "/workspace",
         label: "Workspace",
         icon: Briefcase,
-        soon: true,
-        description: "Watchlists, saved filters and notes",
+        description: "Watchlists, saved filters and recents",
       },
       {
         href: "/reports",

@@ -4,6 +4,7 @@ import { LiveDot } from "@/components/common/live-dot";
 import { Reveal } from "@/components/common/reveal";
 import { Card, CardContent } from "@/components/ui/card";
 import { Stat } from "@/components/common/stat";
+import { MarketStar } from "@/components/workspace/star-button";
 import {
   listMarketSnapshots,
   marketSummary,
@@ -72,6 +73,7 @@ export default async function HistoricalPage({
   return (
     <>
       <Topbar title="Historical" subtitle={subtitle}>
+        <MarketStar asset={filters.asset} fiat={filters.fiat} />
         <LiveDot label="Ingesting" className="hidden sm:inline-flex" />
       </Topbar>
 

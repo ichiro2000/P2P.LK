@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { ArrowDown, ArrowUp, ArrowUpDown, ShieldCheck } from "lucide-react";
+import { MerchantStar } from "@/components/workspace/star-button";
 import type { MerchantSummary } from "@/lib/analytics";
 import {
   formatCompact,
@@ -32,10 +33,12 @@ export function MerchantTable({
   merchants,
   symbol,
   asset,
+  fiat,
 }: {
   merchants: MerchantSummary[];
   symbol: string;
   asset: string;
+  fiat: string;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("trustScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -135,6 +138,7 @@ export function MerchantTable({
                 rank={i + 1}
                 symbol={symbol}
                 asset={asset}
+                fiat={fiat}
               />
             ))}
           </TableBody>
@@ -149,11 +153,13 @@ function MerchantRow({
   rank,
   symbol,
   asset,
+  fiat,
 }: {
   m: MerchantSummary;
   rank: number;
   symbol: string;
   asset: string;
+  fiat: string;
 }) {
   return (
     <TableRow className="border-border transition-colors hover:bg-accent/40">
@@ -177,6 +183,13 @@ function MerchantRow({
                   aria-label="Verified merchant"
                 />
               )}
+              <MerchantStar
+                id={m.id}
+                name={m.name}
+                asset={asset}
+                fiat={fiat}
+                className="-mr-1"
+              />
             </div>
             <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <span className="font-mono tabular-nums">

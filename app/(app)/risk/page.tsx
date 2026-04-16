@@ -1,6 +1,7 @@
 import { Topbar } from "@/components/shell/topbar";
 import { SectionHeader } from "@/components/common/section-header";
 import { LiveDot } from "@/components/common/live-dot";
+import { MarketStar } from "@/components/workspace/star-button";
 import { Reveal } from "@/components/common/reveal";
 import { Card, CardContent } from "@/components/ui/card";
 import { Stat } from "@/components/common/stat";
@@ -54,6 +55,7 @@ export default async function RiskPage({ searchParams }: { searchParams: SP }) {
   return (
     <>
       <Topbar title="Risk" subtitle={subtitle}>
+        <MarketStar asset={filters.asset} fiat={filters.fiat} />
         <LiveDot label="Monitoring" className="hidden sm:inline-flex" />
       </Topbar>
 

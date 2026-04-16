@@ -30,7 +30,18 @@ Dark-first, data-dense, production-ready.
   fiat amount), merchant concentration (HHI + top-N share) for both sides,
   total-depth trend with SMA20 and 7×24 depth heatmap by weekday × hour.
 
-**Stubbed**: Alerts, Workspace, Reports.
+**Workspace & Alerts (v4)**
+- **Workspace** (`/workspace`) — Watchlisted markets with live mini cards
+  (polled 30s), favourite merchants, saved filters and a recent-routes list.
+  Everything lives in localStorage — no auth, no backend.
+- **Alerts** (`/alerts`) — Local rule engine: price above/below, spread
+  above/below, depth below. The checker runs inside the app layout and fires
+  a sonner toast plus persists an event when a rule matches, respecting a
+  per-rule cooldown.
+- Stars are surfaced in the topbar of every market page; the Merchants table
+  has per-row stars. "Save filter" is baked into the filter bar.
+
+**Stubbed**: Reports.
 
 ## Development
 

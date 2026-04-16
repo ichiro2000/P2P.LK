@@ -96,6 +96,7 @@ export function MerchantPanel({
           merchants={merchants}
           symbol={symbol}
           asset={market.asset}
+          fiat={market.fiat}
         />
       </Reveal>
 

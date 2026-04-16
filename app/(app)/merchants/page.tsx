@@ -2,6 +2,7 @@ import { Topbar } from "@/components/shell/topbar";
 import { FilterBar, type FilterState } from "@/components/market/filter-bar";
 import { SectionHeader } from "@/components/common/section-header";
 import { LiveDot } from "@/components/common/live-dot";
+import { MarketStar } from "@/components/workspace/star-button";
 import { fetchBothSides, normalizeAds } from "@/lib/binance";
 import { buildMarket } from "@/lib/analytics";
 import { ASSETS, FIATS } from "@/lib/constants";
@@ -66,6 +67,7 @@ export default async function MerchantsPage({
   return (
     <>
       <Topbar title="Merchants" subtitle={subtitle}>
+        <MarketStar asset={filters.asset} fiat={filters.fiat} />
         <LiveDot label="Live" className="hidden sm:inline-flex" />
       </Topbar>
 

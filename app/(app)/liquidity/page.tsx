@@ -1,6 +1,7 @@
 import { Topbar } from "@/components/shell/topbar";
 import { SectionHeader } from "@/components/common/section-header";
 import { LiveDot } from "@/components/common/live-dot";
+import { MarketStar } from "@/components/workspace/star-button";
 import { Reveal } from "@/components/common/reveal";
 import { Card, CardContent } from "@/components/ui/card";
 import { Stat } from "@/components/common/stat";
@@ -99,6 +100,7 @@ export default async function LiquidityPage({
   return (
     <>
       <Topbar title="Liquidity" subtitle={subtitle}>
+        <MarketStar asset={filters.asset} fiat={filters.fiat} />
         <LiveDot label="Live" className="hidden sm:inline-flex" />
       </Topbar>
 

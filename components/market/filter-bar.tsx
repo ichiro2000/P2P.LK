@@ -17,6 +17,7 @@ import {
   MERCHANT_TYPES,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { SaveFilterButton } from "@/components/workspace/save-filter-button";
 
 export type FilterState = {
   asset: string;
@@ -165,8 +166,19 @@ export function FilterBar({
           </Select>
         </FilterField>
       </div>
+
+      <div className="flex shrink-0 items-end justify-end">
+        <SaveFilterButton autoLabel={saveLabel(initial)} />
+      </div>
     </div>
   );
+}
+
+function saveLabel(f: FilterState): string {
+  const parts = [`${f.asset}/${f.fiat}`];
+  if (f.payType) parts.push(f.payType);
+  if (f.merchantType === "merchant") parts.push("merchants");
+  return parts.join(" · ");
 }
 
 function FilterField({
