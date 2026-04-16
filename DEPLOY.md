@@ -1,42 +1,68 @@
-# Deploying P2P.LK to DigitalOcean + Supabase
+# Deploying P2P.LK to DigitalOcean
 
-This is the canonical deploy path: **DigitalOcean App Platform** for the web
-service and ingest worker, **Supabase** (Postgres) for the data. End-to-end
-the setup takes about 15 minutes; no code changes required.
+The canonical deploy: **DigitalOcean App Platform** for the web service and
+ingest worker, **DigitalOcean Managed Postgres** for the data. Everything
+lives in one DO project — one bill, one dashboard.
 
-## 1 · Grab your Supabase connection string
+## 1 · Prepare your DO Managed Postgres
 
-1. Open your Supabase project.
-2. **Settings → Database → Connection string**.
-3. Pick the **Transaction pooler** tab (port `6543`). Copy the `URI` form —
-   it looks like:
+1. DO dashboard → **Databases → Create Database Cluster → PostgreSQL 16**
+   (skip if you already have one).
+2. Once the cluster is green, open it and go to **Connection Pools →
+   Create Connection Pool** with:
+
+   | Field      | Value                   |
+   |------------|-------------------------|
+   | Pool name  | `p2p-txn` (or similar)  |
+   | Database   | `defaultdb`             |
+   | User       | `doadmin`               |
+   | Mode       | **Transaction**         |
+   | Pool size  | `10`                    |
+
+3. Open the new pool → **Connection Details → Public network → Connection
+   String**. It looks like:
    ```
-   postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+   postgresql://doadmin:<password>@<cluster>-pool-do-user-xxxx-0.db.ondigitalocean.com:25061/defaultdb?sslmode=require
    ```
-4. Replace `[YOUR-PASSWORD]` with the database password you set when the
-   project was created.
+   Save this string — you'll paste it in step 4.
 
-> Why transaction pooler? App Platform containers are long-lived but we
-> still want the pooler's connection limits and resilience. The client
-> is configured with `prepare: false` to work around the pooler's lack of
-> prepared-statement support — see `lib/db/client.ts`.
+> Why the transaction pool? The DB cluster has a fixed connection limit
+> (25 on the cheapest tier). The pool multiplexes many short-lived app
+> requests onto a few real DB connections. `lib/db/client.ts` uses
+> `prepare: false` already, which is required for pgBouncer-style poolers.
 
 ## 2 · (Optional) Smoke-test locally
 
 ```bash
 cp .env.example .env.local
-# paste the Supabase URL into DATABASE_URL
+# paste the Transaction-pool URL into DATABASE_URL
 npm install
-npm run ingest -- USDT:LKR    # one capture — creates tables on first run
+npm run ingest -- USDT:LKR    # creates tables and writes one tick
 npm run dev                    # http://localhost:3000
 ```
 
-You should see the LKR market on the homepage and one tick appear in
-Historical. If this works, the deploy will too.
+If the Historical page shows "one snapshot since …", the DB is wired
+correctly. If it hangs or errors, re-check the URL (port 25061, not 25060;
+`sslmode=require` present).
 
-## 3 · Provision the App Platform app
+## 3 · Wire your cluster name into the app spec
 
-Option A — **CLI** (fastest if you already have `doctl`):
+Open `.do/app.yaml` and replace the placeholder:
+
+```yaml
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    cluster_name: <YOUR_CLUSTER_NAME>   # ← put your cluster's exact name here
+```
+
+Commit and push. This tells App Platform to attach the cluster, which
+auto-adds the app's outbound IPs to the DB's trusted sources.
+
+## 4 · Create the App
+
+Option A — **CLI** (fastest if you have `doctl`):
 
 ```bash
 doctl auth init                         # one-time
@@ -45,59 +71,54 @@ doctl apps create --spec .do/app.yaml   # creates app, kicks off a build
 
 Option B — **Dashboard**:
 
-1. DigitalOcean → Apps → **Create App** → GitHub → pick `ichiro2000/P2P.LK`,
-   branch `main`.
+1. Apps → **Create App** → GitHub → pick `ichiro2000/P2P.LK`, branch `main`.
 2. When the detection screen appears, click **Edit your app spec** and paste
    the contents of `.do/app.yaml`. Save.
-3. Continue through to deploy.
+3. Continue through to the review screen and deploy.
 
-Either path creates two components:
+Either path provisions:
 
 | Component | Kind    | What it runs                               | Size        |
 |-----------|---------|--------------------------------------------|-------------|
 | `web`     | Service | `next start` on port 3000                  | basic-xs    |
 | `ingest`  | Worker  | `tsx scripts/ingest.ts --loop --every=300` | basic-xxs   |
+| `db`      | Managed | Your existing Postgres cluster (attached)  | —           |
 
-## 4 · Add secrets
+## 5 · Add the secret
 
-The app won't finish deploying without `DATABASE_URL`. In the DO dashboard:
+The app will fail to start without `DATABASE_URL`. In the DO dashboard:
 
-1. **Your app → Settings → App-Level Env Vars → Edit**.
-2. Add the following (**Encrypt** checked on both):
-   - `DATABASE_URL` — the Supabase Transaction pooler URI from step 1.
+1. **Your app → Settings → App-Level Environment Variables → Edit**.
+2. Add these with **Encrypt** checked:
+   - `DATABASE_URL` — the Transaction-pool URL from step 1.
    - `CRON_SECRET` — a random string, `openssl rand -hex 32`. Optional; only
-     needed if you intend to curl `/api/cron/snapshot` manually.
-3. **Save** — App Platform redeploys with the new values.
+     needed if you intend to curl `/api/cron/snapshot` by hand.
+3. Save. App Platform redeploys with the new values.
 
-CLI equivalent:
+> Why not use `${db.DATABASE_URL}` from the attached cluster? That variable
+> gives the *direct* connection (port 25060), not the pool. Setting
+> `DATABASE_URL` explicitly overrides it with the pool URL — the attachment
+> still does its job (trusted sources, cert).
 
-```bash
-doctl apps update <APP_ID> --spec .do/app.yaml
-# then go to the dashboard to paste the actual secret values, or use:
-doctl apps config set <APP_ID> --env DATABASE_URL="postgresql://..." --encrypt
-doctl apps config set <APP_ID> --env CRON_SECRET="$(openssl rand -hex 32)" --encrypt
-```
+## 6 · Verify
 
-## 5 · Verify
-
-1. **Build logs** — both `web` and `ingest` should finish green. The ingest
-   log will start printing lines like:
+1. **Build logs** — `web` and `ingest` both finish green. The ingest log
+   prints lines like:
    ```
    [2026-04-16 13:26:35] ingest ok — markets=8/10 rows=10+282 in 3403ms
    ```
-2. **App URL** — open it, `/` should render live LKR data within a few
-   seconds.
-3. **Supabase** — in the SQL editor, run:
+2. **App URL** — open it; `/` renders live LKR data within seconds.
+3. **Database** — open the DB dashboard → **Query**, run:
    ```sql
    SELECT count(*) FROM market_snapshots;
    SELECT count(*) FROM merchant_snapshots;
    ```
    Both should grow every 5 minutes.
-4. **Historical / Risk / Liquidity / Reports → Recap** — these need a few
-   ticks of data before they leave the empty state. Ten minutes after
-   deploy they'll start filling in.
+4. Historical / Risk / Liquidity / Reports → Recap need a few ticks of
+   data before leaving the empty state. Ten minutes after deploy they'll
+   start filling in.
 
-## 6 · Custom domain (optional)
+## 7 · Custom domain (optional)
 
 - **Your app → Settings → Domains → Add Domain**.
 - Point your domain's DNS at the `CNAME` DO gives you.
@@ -105,24 +126,27 @@ doctl apps config set <APP_ID> --env CRON_SECRET="$(openssl rand -hex 32)" --enc
 
 ## Common gotchas
 
-- **Worker crashing with "DATABASE_URL is not set"** — App-level envs weren't
-  saved, or they're scoped to the wrong environment. In the dashboard,
-  expand the var row and confirm **Scope: Run Time** on both.
-- **Build fails on `tsx: command not found`** — `tsx` is intentionally a
-  runtime dependency. If you see this, the worker's `build_command` ran
-  `npm install --production` somehow; ensure the spec's build command is
-  `npm ci` (which installs all deps).
-- **Transaction pooler errors about prepared statements** — double-check
-  the URL uses port **6543**, not 5432, and that you haven't swapped
-  `prepare: false` out of `lib/db/client.ts`.
-- **Ingest errors on Binance 429** — public feed throttling. The worker
-  swallows per-market errors and retries on the next tick; no action
-  needed unless it persists.
+- **"DATABASE_URL is not set" in the worker log** — the secret is scoped
+  to a different environment. In the dashboard expand the var row and
+  confirm **Scope: Run Time** and no environment filter.
+- **`tsx: command not found`** during the `ingest` build — the build command
+  ran `npm install --production` and skipped dev deps. The spec's
+  `build_command: npm ci` installs everything; confirm it hasn't been
+  edited in the dashboard to add `--production`.
+- **DB errors about prepared statements** — double-check the URL uses the
+  pool port (**25061**), not 25060, and that `lib/db/client.ts` still has
+  `prepare: false`.
+- **SSL / certificate errors** — the pool URL must include `?sslmode=require`.
+  `postgres-js` picks that up automatically.
+- **Binance 429 / captcha in the ingest log** — public-feed throttling.
+  The worker swallows per-market errors and retries; no action needed
+  unless it persists.
 
 ## Costs, ballpark
 
-- `basic-xs` web (1GB RAM): **$12/mo**
-- `basic-xxs` worker (512MB): **$5/mo**
-- Supabase free tier covers the DB until you exceed 500MB or 2 GB egress.
+- App Platform `basic-xs` web (1 GB): **$12/mo**
+- App Platform `basic-xxs` worker (512 MB): **$5/mo**
+- Managed Postgres, smallest plan (1 GB RAM, 10 GB SSD): **$15/mo**
 
-Under $20/mo for a comfortably running production instance.
+About **$32/mo** all-in for a comfortably-running production instance on
+DigitalOcean.

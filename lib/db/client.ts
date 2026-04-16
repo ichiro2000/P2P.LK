@@ -29,13 +29,14 @@ function getClient(): postgres.Sql {
   if (!url) {
     throw new Error(
       "DATABASE_URL is not set. Copy .env.example to .env.local and paste " +
-        "your Supabase connection string (Transaction pooler, port 6543).",
+        "your DO Managed Postgres transaction-pool URL (port 25061, " +
+        "sslmode=require).",
     );
   }
 
   global.__p2pSql = postgres(url, {
-    // REQUIRED for Supabase transaction pooler — the pooler rejects prepared
-    // statements because it doesn't hold a server connection per client.
+    // REQUIRED for any pgBouncer-style transaction pooler (DO connection
+    // pool in Transaction mode). Harmless on direct connections.
     prepare: false,
     // Keep the pool small. App Platform runs a handful of containers and we
     // don't need more than a few connections per container.

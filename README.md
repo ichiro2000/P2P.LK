@@ -8,7 +8,7 @@ Dark-first, data-dense, production-ready.
 
 - Next.js 16 (App Router) · React 19 · TypeScript
 - Tailwind CSS v4 · shadcn/ui (Base UI) · Recharts · Lucide
-- Postgres (Supabase) · Drizzle ORM · `postgres-js` · `tsx` for CLI scripts
+- Postgres (DO Managed) · Drizzle ORM · `postgres-js` · `tsx` for CLI scripts
 - Data source: Binance P2P public endpoint (no auth required)
 
 ## Features
@@ -51,7 +51,7 @@ Dark-first, data-dense, production-ready.
 ## Development
 
 ```bash
-cp .env.example .env.local       # paste your Supabase Transaction pooler URL
+cp .env.example .env.local       # paste your DO Managed Postgres pool URL
 npm install
 npm run dev                       # http://localhost:3000
 
@@ -70,10 +70,11 @@ step. Both `next dev` and the CLI pick up `.env.local` automatically.
 
 ## Production
 
-DigitalOcean App Platform + Supabase is the canonical deploy. The app spec
-at `.do/app.yaml` provisions a web service and an ingest worker; only
-`DATABASE_URL` needs to be pasted as a secret in the DO dashboard. Full
-walkthrough in [DEPLOY.md](./DEPLOY.md).
+DigitalOcean App Platform + DigitalOcean Managed Postgres is the canonical
+deploy. `.do/app.yaml` provisions a web service, an ingest worker and
+attaches your existing DB cluster. Only the Transaction-pool `DATABASE_URL`
+needs to be pasted as a secret in the DO dashboard. Full walkthrough in
+[DEPLOY.md](./DEPLOY.md).
 
 ## Architecture
 

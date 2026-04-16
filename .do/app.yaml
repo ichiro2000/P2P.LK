@@ -1,27 +1,51 @@
 # DigitalOcean App Platform spec for P2P.LK
 #
-# Two components:
-#   web     — Next.js app (public HTTP)
-#   ingest  — long-running Node process that ticks every 5 minutes
+# Three pieces:
+#   web        — Next.js service (public HTTP)
+#   ingest     — long-running worker that ticks every 5 minutes
+#   databases  — attaches your existing DO Managed Postgres cluster
 #
-# Deploy with:
+# Deploy:
 #   doctl apps create --spec .do/app.yaml
-# Or via the DO dashboard: Apps → Create App → From source → pick this repo,
-# then paste this file when prompted for the "App Spec" override.
+# or Dashboard → Apps → Create App → From source → paste this file when
+# prompted to override the "App Spec".
 #
-# SECRETS to add after creation (Dashboard → Settings → App-Level Env Vars):
-#   DATABASE_URL    — Supabase Transaction pooler (port 6543) connection string
-#   CRON_SECRET     — random string (openssl rand -hex 32). Optional — only
-#                     needed if you want to hit /api/cron/snapshot by hand.
-# Both should be type: SECRET and scope: RUN_TIME.
+# BEFORE YOU DEPLOY:
+#
+# 1. Replace <YOUR_CLUSTER_NAME> below with the name of the Managed Postgres
+#    cluster you already created. That attachment gives this app automatic
+#    trusted-sources access to the DB and a CA cert env var.
+#
+# 2. In your DB → "Connection Pools" → create one with:
+#       Mode: Transaction
+#       Pool size: 10 (or more, scale later)
+#    Copy its connection string (port 25061, URL includes ?sslmode=require).
+#
+# 3. After `doctl apps create`, go to Dashboard → Settings → App-Level
+#    Env Vars and set:
+#       DATABASE_URL = <paste the connection pool URL>   [Encrypt: on]
+#       CRON_SECRET  = openssl rand -hex 32              [Encrypt: on]
+#    The DATABASE_URL you set here overrides the one auto-injected from the
+#    attached cluster — we want the pool URL, not the direct one.
 
 name: p2p-lk
 region: sfo
 features:
   - buildpack-stack=ubuntu-22
 
-# App-level envs are injected into every component. Values left empty are
-# placeholders — add real values in the DO dashboard or via `doctl`.
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    cluster_name: <YOUR_CLUSTER_NAME>
+    db_name: defaultdb
+    db_user: doadmin
+    production: true
+
+# App-level envs are injected into every component.
+# DATABASE_URL is intentionally a SECRET (no value here) so you can paste the
+# Transaction-pool URL via the dashboard — that value overrides the direct
+# ${db.DATABASE_URL} the attachment would otherwise expose.
 envs:
   - key: DATABASE_URL
     scope: RUN_TIME
@@ -57,9 +81,9 @@ services:
       failure_threshold: 5
 
 workers:
-  # One-process scheduler that replaces cron: runs ingest every N seconds in
-  # a loop. Cheaper and simpler than spinning up an entire cron job, and the
-  # existing `scripts/ingest.ts --loop` is already hardened for this.
+  # Long-running scheduler: runs the ingest every 5 minutes. Simpler and
+  # cheaper than wiring an external cron, and the existing --loop script is
+  # already hardened for it (per-market error isolation, exit on SIGINT).
   - name: ingest
     github:
       repo: ichiro2000/P2P.LK
