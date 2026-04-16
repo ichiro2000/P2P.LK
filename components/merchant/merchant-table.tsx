@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Table,
   TableBody,
@@ -215,18 +216,23 @@ function MerchantRowCmp({
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
+              <Link
+                href={`/merchants/${encodeURIComponent(m.id)}`}
+                className="min-w-0 truncate text-sm font-medium text-foreground hover:text-primary"
+                title={`Open ${m.name} detail`}
+              >
+                <span className="truncate">{m.name}</span>
+              </Link>
               <a
                 href={binanceAdvertiserUrl(m.id)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex min-w-0 items-center gap-1 truncate text-sm font-medium text-foreground hover:text-primary"
+                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-primary"
+                aria-label={`Open ${m.name} on Binance`}
                 title={`Open ${m.name} on Binance`}
+                onClick={(e) => e.stopPropagation()}
               >
-                <span className="truncate">{m.name}</span>
-                <ExternalLink
-                  className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-                  strokeWidth={2}
-                />
+                <ExternalLink className="h-3 w-3" strokeWidth={2} />
               </a>
               {m.isMerchant && (
                 <ShieldCheck
