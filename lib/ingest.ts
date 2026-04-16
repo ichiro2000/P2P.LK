@@ -1,5 +1,5 @@
 import { getDb, schema } from "@/lib/db/client";
-import { fetchBothSides, normalizeAds } from "@/lib/binance";
+import { fetchAdsDeep, normalizeAds } from "@/lib/binance";
 import { buildMarket, summarizeMerchants } from "@/lib/analytics";
 import { ASSET, FIAT, resolveBankPayTypes } from "@/lib/constants";
 
@@ -51,13 +51,14 @@ export async function runIngest(
 
   for (const { asset, fiat } of markets) {
     try {
-      const { buy, sell } = await fetchBothSides({
+      // Deep sweep so the merchant directory captures the full counterparty
+      // set, not just the top 20-per-side that a single page returns.
+      const { buy, sell } = await fetchAdsDeep({
         asset,
         fiat,
-        rows: 20,
         payTypes: resolveBankPayTypes(""),
         publisherType: null,
-      });
+      }, { pagesPerSide: 5, rowsPerPage: 20 });
 
       if (buy.length === 0 && sell.length === 0) {
         // Still record the market row with nulls so gaps are visible.
@@ -85,14 +86,24 @@ export async function runIngest(
         continue;
       }
 
-      const ads = [
+      // Market snapshot uses the top 20-per-side (comparable to historical
+      // records), merchant summary uses the full deep sweep so we can persist
+      // every counterparty we saw.
+      const topBuy = buy.slice(0, 20);
+      const topSell = sell.slice(0, 20);
+      const topAds = [
+        ...normalizeAds(topBuy, "BUY"),
+        ...normalizeAds(topSell, "SELL"),
+      ];
+      const snapshot = buildMarket(asset, fiat, topAds);
+
+      const allAds = [
         ...normalizeAds(buy, "BUY"),
         ...normalizeAds(sell, "SELL"),
       ];
-      const snapshot = buildMarket(asset, fiat, ads);
       const medianForPremium =
         snapshot.sell.medianPrice ?? snapshot.buy.medianPrice ?? null;
-      const merchants = summarizeMerchants(ads, medianForPremium);
+      const merchants = summarizeMerchants(allAds, medianForPremium);
 
       await db.insert(schema.marketSnapshots).values({
         ts,

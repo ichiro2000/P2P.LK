@@ -82,6 +82,58 @@ export async function fetchBothSides(
   return { buy, sell };
 }
 
+/**
+ * Deep sweep — paginate both book sides to enumerate every merchant currently
+ * listing on the market. Each Binance page caps at 20 rows, so
+ * `pagesPerSide=5` gives up to 100 ads per side (200 total). Stops early when
+ * a page comes back short (Binance has no more results).
+ *
+ * Used by the ingest worker so the merchant directory in our DB converges
+ * toward the full LKR counterparty set, not just the top 20 per side that the
+ * live page renders.
+ *
+ * Ads are de-duplicated on adNo across pages in case Binance reshuffles mid
+ * sweep.
+ */
+export async function fetchAdsDeep(
+  filters: Omit<SearchFilters, "tradeType" | "page" | "rows">,
+  opts?: {
+    pagesPerSide?: number;
+    rowsPerPage?: number;
+    revalidate?: number;
+    signal?: AbortSignal;
+  },
+): Promise<{ buy: BinanceAdItem[]; sell: BinanceAdItem[] }> {
+  const pagesPerSide = Math.max(1, Math.min(10, opts?.pagesPerSide ?? 5));
+  const rowsPerPage = Math.max(5, Math.min(20, opts?.rowsPerPage ?? 20));
+
+  async function sweepSide(query: TradeType): Promise<BinanceAdItem[]> {
+    const seen = new Set<string>();
+    const out: BinanceAdItem[] = [];
+    for (let page = 1; page <= pagesPerSide; page++) {
+      const items = await fetchBinanceP2P(
+        { ...filters, tradeType: query, rows: rowsPerPage, page },
+        { signal: opts?.signal, revalidate: opts?.revalidate ?? P2P_REVALIDATE },
+      ).catch(() => [] as BinanceAdItem[]);
+      if (items.length === 0) break;
+      for (const it of items) {
+        if (!seen.has(it.adv.advNo)) {
+          seen.add(it.adv.advNo);
+          out.push(it);
+        }
+      }
+      if (items.length < rowsPerPage) break;
+    }
+    return out;
+  }
+
+  const [buyQueryResult, sellQueryResult] = await Promise.all([
+    sweepSide("SELL"), // query SELL → publishers who BUY → our `buy` side
+    sweepSide("BUY"), // query BUY  → publishers who SELL → our `sell` side
+  ]);
+  return { buy: buyQueryResult, sell: sellQueryResult };
+}
+
 /** Convert Binance item to our normalized ad shape. */
 export function normalizeAd(item: BinanceAdItem): NormalizedAd {
   const { adv, advertiser } = item;

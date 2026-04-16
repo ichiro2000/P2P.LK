@@ -259,3 +259,123 @@ export function summarizeMerchants(
   return summaries.sort((a, b) => b.trustScore - a.trustScore);
 }
 
+/**
+ * Directory row — a merchant plus whether they're on the live book right now
+ * and when we last saw them. Used by the merchants page to render both active
+ * and inactive counterparties.
+ *
+ * `isActive` means the merchant has ≥1 BUY or SELL ad on the live book right
+ * now. Merchants carried over from history but not currently listing are
+ * `isActive = false`.
+ */
+export type MerchantRow = MerchantSummary & {
+  isActive: boolean;
+  /** Unix seconds of the most recent observation (live > historical). */
+  lastSeenTs: number;
+};
+
+export type KnownMerchantInput = {
+  merchantId: string;
+  merchantName: string;
+  lastSeenTs: number;
+  isMerchant: boolean | null;
+  ordersMonth: number | null;
+  completionRate: number | null;
+  avgReleaseSec: number | null;
+  buyAds: number | null;
+  sellAds: number | null;
+  bestBuyPrice: number | null;
+  bestSellPrice: number | null;
+  totalAvailableFiat: number | null;
+};
+
+/**
+ * Merge live merchants (with full MerchantSummary analytics) and historical
+ * directory rows. Live data always wins; historical rows fill in the long tail
+ * of merchants not currently on the book.
+ */
+export function mergeMerchantDirectory(
+  liveMerchants: MerchantSummary[],
+  knownMerchants: KnownMerchantInput[],
+  marketMedian: number | null,
+  nowTs: number,
+): MerchantRow[] {
+  const byId = new Map<string, MerchantRow>();
+
+  for (const m of liveMerchants) {
+    // Active = at least one live BUY or SELL ad right now. summarizeMerchants
+    // only emits merchants that contributed an ad, so this is effectively
+    // always true — asserted explicitly so the invariant can't drift.
+    const hasLiveAd = m.buyAds + m.sellAds >= 1;
+    byId.set(m.id, {
+      ...m,
+      isActive: hasLiveAd,
+      lastSeenTs: nowTs,
+    });
+  }
+
+  for (const k of knownMerchants) {
+    if (byId.has(k.merchantId)) continue;
+    const completionRate = k.completionRate ?? 0;
+    const orders30d = k.ordersMonth ?? 0;
+    const avgReleaseSec = k.avgReleaseSec ?? undefined;
+
+    const completionPts = Math.max(0, Math.min(1, completionRate)) * 50;
+    const ordersNorm = Math.min(
+      1,
+      Math.log10(Math.max(1, orders30d)) / Math.log10(2000),
+    );
+    const orderPts = ordersNorm * 30;
+    const releasePts = (() => {
+      if (avgReleaseSec == null) return 12;
+      if (avgReleaseSec <= 60) return 20;
+      if (avgReleaseSec <= 180) return 16;
+      if (avgReleaseSec <= 300) return 12;
+      if (avgReleaseSec <= 600) return 8;
+      return 4;
+    })();
+    const trust = Math.max(
+      0,
+      Math.min(100, Math.round(completionPts + orderPts + releasePts)),
+    );
+
+    // No live ads → no premium or competitiveness. Derive a rough proxy from
+    // the merchant's last-known best prices if the market median is available.
+    const approxMid =
+      k.bestBuyPrice != null && k.bestSellPrice != null
+        ? (k.bestBuyPrice + k.bestSellPrice) / 2
+        : k.bestBuyPrice ?? k.bestSellPrice ?? null;
+    const premiumVsMedian =
+      approxMid != null && marketMedian != null && marketMedian > 0
+        ? (approxMid - marketMedian) / marketMedian
+        : null;
+
+    byId.set(k.merchantId, {
+      id: k.merchantId,
+      name: k.merchantName,
+      isMerchant: Boolean(k.isMerchant),
+      orders30d,
+      completionRate,
+      avgReleaseSec,
+      adCount: (k.buyAds ?? 0) + (k.sellAds ?? 0),
+      buyAds: k.buyAds ?? 0,
+      sellAds: k.sellAds ?? 0,
+      totalAvailableFiat: k.totalAvailableFiat ?? 0,
+      bestBuyPrice: k.bestBuyPrice,
+      bestSellPrice: k.bestSellPrice,
+      premiumVsMedian,
+      trustScore: trust,
+      competitiveness: 0,
+      payMethods: [],
+      isActive: false,
+      lastSeenTs: k.lastSeenTs,
+    });
+  }
+
+  return Array.from(byId.values()).sort((a, b) => {
+    // Active merchants rank above inactive; then by trust score.
+    if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+    return b.trustScore - a.trustScore;
+  });
+}
+

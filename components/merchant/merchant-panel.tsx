@@ -1,65 +1,93 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { MarketSnapshot } from "@/lib/types";
 import { usePolling } from "@/hooks/use-polling";
 import { MerchantTable } from "./merchant-table";
 import { Stat } from "@/components/common/stat";
 import { Reveal } from "@/components/common/reveal";
 import { Card, CardContent } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { formatCompact, formatPct, formatRelative } from "@/lib/format";
 import { getFiat } from "@/lib/constants";
-import { summarizeMerchants } from "@/lib/analytics";
+import type { MerchantRow } from "@/lib/analytics";
 import { Activity, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FilterState } from "@/components/market/filter-bar";
 
+type DirectoryResponse = {
+  asset: string;
+  fiat: string;
+  fetchedAt: string;
+  marketMedian: number | null;
+  liveCount: number;
+  knownCount: number;
+  merchants: MerchantRow[];
+};
+
 export function MerchantPanel({
   initial,
+  initialDirectory,
   filters,
 }: {
   initial: MarketSnapshot;
+  initialDirectory: MerchantRow[];
   filters: FilterState;
 }) {
+  const [activeOnly, setActiveOnly] = useState(false);
+
   const url = useMemo(() => {
     const p = new URLSearchParams({
       asset: filters.asset,
       fiat: filters.fiat,
-      rows: "20",
     });
     if (filters.payType) p.set("payTypes", filters.payType);
     if (filters.merchantType === "merchant") p.set("publisher", "merchant");
-    return `/api/p2p/market?${p.toString()}`;
+    return `/api/merchants?${p.toString()}`;
   }, [filters]);
 
-  const { data, loading, lastUpdated, refetch, error } = usePolling<
-    MarketSnapshot
-  >(url, { initialData: initial, intervalMs: 30_000 });
-
-  const market = data ?? initial;
-  const fiat = getFiat(market.fiat);
-  const symbol = fiat?.symbol ?? market.fiat;
-
-  const marketMedian =
-    market.sell.medianPrice ?? market.buy.medianPrice ?? null;
-
-  const merchants = useMemo(
-    () => summarizeMerchants(market.ads, marketMedian),
-    [market.ads, marketMedian],
+  const initialData = useMemo<DirectoryResponse>(
+    () => ({
+      asset: initial.asset,
+      fiat: initial.fiat,
+      fetchedAt: initial.fetchedAt,
+      marketMedian:
+        initial.sell.medianPrice ?? initial.buy.medianPrice ?? null,
+      liveCount: initialDirectory.filter((m) => m.isActive).length,
+      knownCount: initialDirectory.length,
+      merchants: initialDirectory,
+    }),
+    [initial, initialDirectory],
   );
 
-  const verifiedCount = merchants.filter((m) => m.isMerchant).length;
+  const { data, loading, lastUpdated, refetch, error } =
+    usePolling<DirectoryResponse>(url, {
+      initialData,
+      intervalMs: 30_000,
+    });
+
+  const directory = data?.merchants ?? initialDirectory;
+  const fiat = getFiat(initial.fiat);
+  const symbol = fiat?.symbol ?? initial.fiat;
+
+  const filtered = useMemo(
+    () => (activeOnly ? directory.filter((m) => m.isActive) : directory),
+    [directory, activeOnly],
+  );
+
+  const activeCount = directory.filter((m) => m.isActive).length;
+  const verifiedCount = filtered.filter((m) => m.isMerchant).length;
   const avgCompletion =
-    merchants.length > 0
-      ? merchants.reduce((s, m) => s + m.completionRate, 0) / merchants.length
+    filtered.length > 0
+      ? filtered.reduce((s, m) => s + m.completionRate, 0) / filtered.length
       : 0;
-  const totalDepthFiat = merchants.reduce(
+  const totalDepthFiat = filtered.reduce(
     (s, m) => s + m.totalAvailableFiat,
     0,
   );
   const avgTrust =
-    merchants.length > 0
-      ? merchants.reduce((s, m) => s + m.trustScore, 0) / merchants.length
+    filtered.length > 0
+      ? filtered.reduce((s, m) => s + m.trustScore, 0) / filtered.length
       : 0;
 
   return (
@@ -68,9 +96,13 @@ export function MerchantPanel({
         <Card className="border-border bg-card/60">
           <CardContent className="grid grid-cols-2 gap-x-6 gap-y-5 p-5 md:grid-cols-4">
             <Stat
-              label="Unique merchants"
-              value={merchants.length.toString()}
-              footnote={`${verifiedCount} verified`}
+              label={activeOnly ? "Active merchants" : "Merchants tracked"}
+              value={filtered.length.toString()}
+              footnote={
+                activeOnly
+                  ? `${verifiedCount} verified`
+                  : `${activeCount} active now · ${verifiedCount} verified`
+              }
             />
             <Stat
               label="Average trust"
@@ -85,18 +117,49 @@ export function MerchantPanel({
             <Stat
               label="Market depth"
               value={`${symbol} ${formatCompact(totalDepthFiat)}`}
-              footnote={`${market.asset} tradable`}
+              footnote={`${initial.asset} tradable${activeOnly ? "" : " (live)"}`}
             />
           </CardContent>
         </Card>
       </Reveal>
 
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card/40 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <Switch
+            checked={activeOnly}
+            onCheckedChange={(next) => setActiveOnly(Boolean(next))}
+            aria-label="Filter active merchants"
+          />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">
+              Active Now
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              {activeOnly
+                ? `Showing ${filtered.length} merchants currently listing ads`
+                : `Showing all ${directory.length} merchants ever seen on this market`}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-buy)]" />
+            {activeCount} active
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+            {Math.max(0, directory.length - activeCount)} offline
+          </span>
+        </div>
+      </div>
+
       <Reveal delay={80}>
         <MerchantTable
-          merchants={merchants}
+          merchants={filtered}
           symbol={symbol}
-          asset={market.asset}
-          fiat={market.fiat}
+          asset={initial.asset}
+          fiat={initial.fiat}
         />
       </Reveal>
 

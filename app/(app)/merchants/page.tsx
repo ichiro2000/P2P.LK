@@ -4,11 +4,16 @@ import { SectionHeader } from "@/components/common/section-header";
 import { LiveDot } from "@/components/common/live-dot";
 import { MarketStar } from "@/components/workspace/star-button";
 import { fetchBothSides, normalizeAds } from "@/lib/binance";
-import { buildMarket } from "@/lib/analytics";
+import {
+  buildMarket,
+  mergeMerchantDirectory,
+  summarizeMerchants,
+} from "@/lib/analytics";
 import { ASSET, FIAT, resolveBankPayTypes } from "@/lib/constants";
 import { MerchantPanel } from "@/components/merchant/merchant-panel";
 import { Empty } from "@/components/common/empty";
 import { CloudOff } from "lucide-react";
+import { listAllKnownMerchants } from "@/lib/db/queries";
 
 export const revalidate = 30;
 
@@ -40,19 +45,30 @@ export default async function MerchantsPage({
   const filters = parseFilters(sp);
 
   let snapshot = null;
+  let directory: ReturnType<typeof mergeMerchantDirectory> = [];
   try {
-    const { buy, sell } = await fetchBothSides({
-      asset: filters.asset,
-      fiat: filters.fiat,
-      rows: 20,
-      payTypes: resolveBankPayTypes(filters.payType),
-      publisherType: filters.merchantType === "merchant" ? "merchant" : null,
-    });
+    const [{ buy, sell }, known] = await Promise.all([
+      fetchBothSides({
+        asset: filters.asset,
+        fiat: filters.fiat,
+        rows: 20,
+        payTypes: resolveBankPayTypes(filters.payType),
+        publisherType: filters.merchantType === "merchant" ? "merchant" : null,
+      }),
+      listAllKnownMerchants(filters.asset, filters.fiat).catch(() => []),
+    ]);
     const ads = [
       ...normalizeAds(buy, "BUY"),
       ...normalizeAds(sell, "SELL"),
     ];
     snapshot = buildMarket(filters.asset, filters.fiat, ads);
+    const marketMedian =
+      snapshot.sell.medianPrice ?? snapshot.buy.medianPrice ?? null;
+    const live = summarizeMerchants(ads, marketMedian);
+    const nowTs = Math.floor(
+      new Date(snapshot.fetchedAt).getTime() / 1000,
+    );
+    directory = mergeMerchantDirectory(live, known, marketMedian, nowTs);
   } catch {
     snapshot = null;
   }
@@ -70,13 +86,17 @@ export default async function MerchantsPage({
         <SectionHeader
           kicker="Merchant analytics"
           title={`Who's making the market in ${ASSET}/${FIAT.code}?`}
-          description="Counterparties ranked by a composite trust score built from completion rate, order volume and release time. Premium vs median reveals who's pricing aggressively and who's skimming."
+          description="Every counterparty we've seen on the LKR book, ranked by a composite trust score built from completion rate, order volume and release time. Toggle Active Now to filter to merchants currently listing."
         />
 
         <FilterBar initial={filters} />
 
         {snapshot ? (
-          <MerchantPanel initial={snapshot} filters={filters} />
+          <MerchantPanel
+            initial={snapshot}
+            initialDirectory={directory}
+            filters={filters}
+          />
         ) : (
           <Empty
             icon={CloudOff}
