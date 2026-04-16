@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   Select,
@@ -11,9 +10,9 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
-  ASSETS,
-  FIATS,
-  PAY_TYPES_BY_FIAT,
+  ASSET,
+  FIAT,
+  BANK_TRANSFER_OPTIONS,
   MERCHANT_TYPES,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -22,15 +21,15 @@ import { SaveFilterButton } from "@/components/workspace/save-filter-button";
 export type FilterState = {
   asset: string;
   fiat: string;
+  /** Empty string means "both bank identifiers"; otherwise a single id. */
   payType: string;
   merchantType: string;
 };
 
 /**
- * URL-backed filter bar. All state lives in searchParams so:
- *   - shareable URLs
- *   - back/forward preserves filter
- *   - server components can read current filters without hydration cost
+ * URL-backed filter bar. Product scope is fixed to USDT / LKR so only two
+ * pickers remain: which specific bank identifier to scope to, and whether
+ * to restrict to verified merchants.
  */
 export function FilterBar({
   initial,
@@ -42,11 +41,6 @@ export function FilterBar({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-
-  const payTypes = useMemo(() => {
-    const list = PAY_TYPES_BY_FIAT[initial.fiat.toUpperCase()] ?? [];
-    return [{ id: "", label: "All payment methods" }, ...list];
-  }, [initial.fiat]);
 
   function update(patch: Partial<FilterState>) {
     const next = new URLSearchParams(searchParams?.toString() ?? "");
@@ -66,76 +60,38 @@ export function FilterBar({
       )}
     >
       <div className="grid grid-cols-2 gap-3 md:flex md:flex-1 md:items-end md:gap-3">
-        <FilterField label="Asset">
-          <Select
-            value={initial.asset}
-            onValueChange={(v) => update({ asset: v ?? "USDT" })}
-          >
-            <SelectTrigger className="w-full min-w-[108px]">
-              <SelectValue placeholder="Asset" />
-            </SelectTrigger>
-            <SelectContent>
-              {ASSETS.map((a) => (
-                <SelectItem key={a} value={a}>
-                  {a}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterField>
+        {/* Asset is locked to USDT — render as a static chip so users get
+            immediate context without a 1-option dropdown. */}
+        <LockedChip label="Asset" value={ASSET} />
 
-        <FilterField label="Fiat / country">
-          <Select
-            value={initial.fiat}
-            onValueChange={(v) =>
-              update({ fiat: v ?? "LKR", payType: "" /* reset rail */ })
-            }
-          >
-            <SelectTrigger className="w-full min-w-[170px]">
-              <SelectValue placeholder="Fiat">
-                {(val) => {
-                  const f = FIATS.find((f) => f.code === val);
-                  return f ? (
-                    <>
-                      <span className="mr-1.5">{f.flag}</span>
-                      <span className="font-mono">{f.code}</span>
-                    </>
-                  ) : (
-                    "Fiat"
-                  );
-                }}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {FIATS.map((f) => (
-                <SelectItem key={f.code} value={f.code}>
-                  <span className="mr-2">{f.flag}</span>
-                  <span className="font-mono">{f.code}</span>
-                  <span className="ml-2 text-muted-foreground">
-                    {f.name}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterField>
+        {/* Fiat is locked to LKR — same treatment. */}
+        <LockedChip
+          label="Country"
+          value={
+            <span className="inline-flex items-center gap-1.5 font-mono">
+              <span>{FIAT.flag}</span>
+              <span>{FIAT.code}</span>
+            </span>
+          }
+        />
 
-        <FilterField label="Payment method">
+        <FilterField label="Bank rail">
           <Select
             value={initial.payType || ""}
             onValueChange={(v) => update({ payType: v ?? "" })}
           >
-            <SelectTrigger className="w-full min-w-[170px]">
-              <SelectValue placeholder="All payment methods">
-                {(val) =>
-                  payTypes.find((p) => p.id === val)?.label ??
-                  "All payment methods"
-                }
+            <SelectTrigger className="w-full min-w-[200px]">
+              <SelectValue placeholder="All bank transfers">
+                {(val) => {
+                  const opt = BANK_TRANSFER_OPTIONS.find((o) => o.id === val);
+                  return opt?.label ?? "All bank transfers";
+                }}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {payTypes.map((p) => (
-                <SelectItem key={p.id || "all"} value={p.id}>
+              <SelectItem value="">All bank transfers</SelectItem>
+              {BANK_TRANSFER_OPTIONS.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
                   {p.label}
                 </SelectItem>
               ))}
@@ -151,8 +107,7 @@ export function FilterBar({
             <SelectTrigger className="w-full min-w-[150px]">
               <SelectValue placeholder="Publisher">
                 {(val) =>
-                  MERCHANT_TYPES.find((m) => m.id === val)?.label ??
-                  "Publisher"
+                  MERCHANT_TYPES.find((m) => m.id === val)?.label ?? "Publisher"
                 }
               </SelectValue>
             </SelectTrigger>
@@ -175,8 +130,9 @@ export function FilterBar({
 }
 
 function saveLabel(f: FilterState): string {
-  const parts = [`${f.asset}/${f.fiat}`];
-  if (f.payType) parts.push(f.payType);
+  const parts = ["USDT/LKR"];
+  const rail = BANK_TRANSFER_OPTIONS.find((o) => o.id === f.payType)?.label;
+  if (rail) parts.push(rail);
   if (f.merchantType === "merchant") parts.push("merchants");
   return parts.join(" · ");
 }
@@ -198,3 +154,25 @@ function FilterField({
   );
 }
 
+/**
+ * A read-only chip for scope-locked fields (Asset, Fiat). Mirrors the height
+ * and density of the Select triggers so the row stays visually aligned.
+ */
+function LockedChip({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        {label}
+      </Label>
+      <div className="flex h-8 items-center gap-2 rounded-lg border border-border/60 bg-background/40 px-2.5 text-sm text-foreground">
+        {value}
+      </div>
+    </div>
+  );
+}

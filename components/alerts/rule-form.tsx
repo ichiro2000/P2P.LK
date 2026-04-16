@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ASSETS, FIATS, getFiat } from "@/lib/constants";
+import { ASSET, FIAT } from "@/lib/constants";
 import { alertRules, type AlertRuleType } from "@/lib/storage";
 import { RULE_TYPE_META } from "@/lib/alert-engine";
 
@@ -26,22 +26,17 @@ const TYPE_ORDER: AlertRuleType[] = [
   "depthBelow",
 ];
 
-export function RuleForm({
-  defaultAsset = "USDT",
-  defaultFiat = "LKR",
-}: {
-  defaultAsset?: string;
-  defaultFiat?: string;
-}) {
-  const [asset, setAsset] = useState(defaultAsset);
-  const [fiat, setFiat] = useState(defaultFiat);
+export function RuleForm() {
+  // Asset and fiat are product-scoped — no picker needed.
+  const asset = ASSET;
+  const fiat = FIAT.code;
+  const symbol = FIAT.symbol;
+
   const [type, setType] = useState<AlertRuleType>("priceAbove");
   const [threshold, setThreshold] = useState<number>(330);
   const [cooldown, setCooldown] = useState<number>(300);
 
   const meta = RULE_TYPE_META[type];
-  const fiatMeta = getFiat(fiat);
-  const symbol = fiatMeta?.symbol ?? fiat;
 
   const unitLabel =
     meta.unit === "price"
@@ -56,8 +51,7 @@ export function RuleForm({
       toast.error("Threshold must be a positive number");
       return;
     }
-    const internal =
-      meta.unit === "percent" ? threshold / 100 : threshold;
+    const internal = meta.unit === "percent" ? threshold / 100 : threshold;
 
     alertRules.create({
       type,
@@ -72,59 +66,18 @@ export function RuleForm({
   return (
     <Card className="card-lift border-border bg-card/60">
       <CardHeader className="pb-2">
-        <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          New alert rule
+        <CardTitle className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          <span>New alert rule</span>
+          <span className="font-mono text-[10px] tracking-wider text-muted-foreground/70">
+            {asset}/{fiat}
+          </span>
         </CardTitle>
       </CardHeader>
       <CardContent>
         <form
           onSubmit={submit}
-          className="grid grid-cols-2 gap-3 md:grid-cols-[110px_150px_minmax(180px,1fr)_140px_120px_auto]"
+          className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(200px,1fr)_150px_130px_auto]"
         >
-          <Field label="Asset">
-            <Select value={asset} onValueChange={(v) => setAsset(v ?? "USDT")}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ASSETS.map((a) => (
-                  <SelectItem key={a} value={a}>
-                    {a}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="Fiat">
-            <Select value={fiat} onValueChange={(v) => setFiat(v ?? "LKR")}>
-              <SelectTrigger className="w-full">
-                <SelectValue>
-                  {(val) => {
-                    const f = FIATS.find((f) => f.code === val);
-                    return f ? (
-                      <>
-                        <span className="mr-1.5">{f.flag}</span>
-                        <span className="font-mono">{f.code}</span>
-                      </>
-                    ) : (
-                      "Fiat"
-                    );
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {FIATS.map((f) => (
-                  <SelectItem key={f.code} value={f.code}>
-                    <span className="mr-2">{f.flag}</span>
-                    <span className="font-mono">{f.code}</span>
-                    <span className="ml-2 text-muted-foreground">{f.name}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
           <Field label="Condition">
             <Select
               value={type}
@@ -151,9 +104,7 @@ export function RuleForm({
             <Input
               type="number"
               value={threshold}
-              onChange={(e) =>
-                setThreshold(Number(e.target.value) || 0)
-              }
+              onChange={(e) => setThreshold(Number(e.target.value) || 0)}
               min={0}
               step={meta.unit === "percent" ? 0.01 : 1}
               className="font-mono tabular-nums"

@@ -1,7 +1,7 @@
 import { getDb, schema } from "@/lib/db/client";
 import { fetchBothSides, normalizeAds } from "@/lib/binance";
 import { buildMarket, summarizeMerchants } from "@/lib/analytics";
-import { DEFAULT_ARB_FIATS } from "@/lib/constants";
+import { ASSET, FIAT, resolveBankPayTypes } from "@/lib/constants";
 
 export type IngestMarket = { asset: string; fiat: string };
 export type IngestReport = {
@@ -15,10 +15,12 @@ export type IngestReport = {
   errors: { market: string; error: string }[];
 };
 
-const DEFAULT_MARKETS: IngestMarket[] = DEFAULT_ARB_FIATS.map((fiat) => ({
-  asset: "USDT",
-  fiat,
-}));
+/**
+ * Product scope is USDT / LKR bank transfers. The worker captures this one
+ * market per tick; the CLI can still override with --asset:fiat pairs for
+ * ad-hoc captures.
+ */
+const DEFAULT_MARKETS: IngestMarket[] = [{ asset: ASSET, fiat: FIAT.code }];
 
 /**
  * Capture one snapshot per market.
@@ -53,6 +55,7 @@ export async function runIngest(
         asset,
         fiat,
         rows: 20,
+        payTypes: resolveBankPayTypes(""),
         publisherType: null,
       });
 

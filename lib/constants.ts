@@ -1,117 +1,68 @@
 /**
- * Curated lists used across filter UIs.
- * Source: Binance P2P public surface + frequency of use.
- * These are starter values — extend as needed.
+ * Product scope — Sri Lankan Rupee P2P with bank-transfer settlement only.
+ *
+ * The app used to be multi-fiat / multi-rail; we've intentionally narrowed it
+ * to the slice that actually matches the Sri Lankan user's workflow.
  */
 
-export const ASSETS = ["USDT", "BTC", "ETH", "BNB", "USDC", "FDUSD"] as const;
-export type Asset = (typeof ASSETS)[number];
+export const ASSET = "USDT" as const;
+export type Asset = typeof ASSET;
+
+/** Kept as a one-element array so tests that expected an array still pass. */
+export const ASSETS = [ASSET] as const;
 
 export type FiatOption = {
   code: string;
   name: string;
   symbol: string;
-  flag: string; // emoji flag (best-effort)
+  flag: string;
 };
 
-export const FIATS: FiatOption[] = [
-  { code: "LKR", name: "Sri Lankan Rupee", symbol: "Rs", flag: "🇱🇰" },
-  { code: "USD", name: "US Dollar", symbol: "$", flag: "🇺🇸" },
-  { code: "INR", name: "Indian Rupee", symbol: "₹", flag: "🇮🇳" },
-  { code: "PKR", name: "Pakistani Rupee", symbol: "Rs", flag: "🇵🇰" },
-  { code: "BDT", name: "Bangladeshi Taka", symbol: "৳", flag: "🇧🇩" },
-  { code: "PHP", name: "Philippine Peso", symbol: "₱", flag: "🇵🇭" },
-  { code: "IDR", name: "Indonesian Rupiah", symbol: "Rp", flag: "🇮🇩" },
-  { code: "VND", name: "Vietnamese Dong", symbol: "₫", flag: "🇻🇳" },
-  { code: "THB", name: "Thai Baht", symbol: "฿", flag: "🇹🇭" },
-  { code: "MYR", name: "Malaysian Ringgit", symbol: "RM", flag: "🇲🇾" },
-  { code: "NGN", name: "Nigerian Naira", symbol: "₦", flag: "🇳🇬" },
-  { code: "ARS", name: "Argentine Peso", symbol: "$", flag: "🇦🇷" },
-  { code: "BRL", name: "Brazilian Real", symbol: "R$", flag: "🇧🇷" },
-  { code: "TRY", name: "Turkish Lira", symbol: "₺", flag: "🇹🇷" },
-  { code: "AED", name: "UAE Dirham", symbol: "د.إ", flag: "🇦🇪" },
-  { code: "EUR", name: "Euro", symbol: "€", flag: "🇪🇺" },
-  { code: "GBP", name: "British Pound", symbol: "£", flag: "🇬🇧" },
-];
+/** Locked to LKR. */
+export const FIAT: FiatOption = {
+  code: "LKR",
+  name: "Sri Lankan Rupee",
+  symbol: "Rs",
+  flag: "🇱🇰",
+};
+
+/** Historical multi-fiat list kept as a 1-element array for compatibility
+ *  (filter validators, report generators that expected FIATS.some). */
+export const FIATS: FiatOption[] = [FIAT];
 
 export function getFiat(code: string): FiatOption | undefined {
-  return FIATS.find((f) => f.code.toUpperCase() === code.toUpperCase());
+  return code.toUpperCase() === FIAT.code ? FIAT : undefined;
 }
 
-/** Common Binance pay type identifiers per fiat. Used for filter UI.
- *  Keys are upper-case fiat codes, values are pairs of (identifier, label). */
+/**
+ * The only pay-method identifiers we accept. Discovered empirically from
+ * Binance's adv/search response for LKR: every ad uses one of these two.
+ * Anything else (mobile top-up, airtime, gift cards) is out of scope.
+ */
+export const BANK_TRANSFER_IDS = ["BANK", "BankSriLanka"] as const;
+export type BankTransferId = (typeof BANK_TRANSFER_IDS)[number];
+
+export const BANK_TRANSFER_OPTIONS: { id: BankTransferId; label: string }[] = [
+  { id: "BANK", label: "Bank Transfer" },
+  { id: "BankSriLanka", label: "Bank Transfer (Sri Lanka)" },
+];
+
+/**
+ * Resolve the filter bar's payType selection into the list we actually pass
+ * to Binance. Empty string means "both" — default everywhere in the UI.
+ */
+export function resolveBankPayTypes(selection: string | null | undefined): string[] {
+  if (!selection) return [...BANK_TRANSFER_IDS];
+  const match = BANK_TRANSFER_IDS.find((id) => id === selection);
+  return match ? [match] : [...BANK_TRANSFER_IDS];
+}
+
+/** Legacy: kept for the filter-bar API which reads by fiat code. */
 export const PAY_TYPES_BY_FIAT: Record<
   string,
   { id: string; label: string }[]
 > = {
-  LKR: [
-    { id: "BANK", label: "Bank Transfer" },
-    { id: "CommercialBankofCeylon", label: "Commercial Bank" },
-    { id: "HatBank", label: "Hatton National Bank" },
-    { id: "SampathBank", label: "Sampath Bank" },
-    { id: "PeoplesBank", label: "People's Bank" },
-    { id: "BankofCeylon", label: "Bank of Ceylon" },
-  ],
-  USD: [
-    { id: "BANK", label: "Bank Transfer" },
-    { id: "WISE", label: "Wise" },
-    { id: "Zelle", label: "Zelle" },
-    { id: "PayPal", label: "PayPal" },
-    { id: "CashAppPay", label: "Cash App" },
-    { id: "Revolut", label: "Revolut" },
-  ],
-  INR: [
-    { id: "UPI", label: "UPI" },
-    { id: "IMPS", label: "IMPS" },
-    { id: "BANK", label: "Bank Transfer" },
-  ],
-  PKR: [
-    { id: "EasyPaisa", label: "EasyPaisa" },
-    { id: "JazzCash", label: "JazzCash" },
-    { id: "BANK", label: "Bank Transfer" },
-  ],
-  BDT: [
-    { id: "bKash", label: "bKash" },
-    { id: "Nagad", label: "Nagad" },
-    { id: "BANK", label: "Bank Transfer" },
-  ],
-  PHP: [
-    { id: "GCASH", label: "GCash" },
-    { id: "Maya", label: "Maya" },
-    { id: "BANK", label: "Bank Transfer" },
-  ],
-  IDR: [
-    { id: "BANK", label: "Bank Transfer" },
-    { id: "DANA", label: "DANA" },
-    { id: "OVO", label: "OVO" },
-  ],
-  VND: [
-    { id: "BANK", label: "Bank Transfer" },
-    { id: "Momo", label: "MoMo" },
-    { id: "ZaloPay", label: "ZaloPay" },
-  ],
-  NGN: [
-    { id: "BANK", label: "Bank Transfer" },
-    { id: "OPAY", label: "OPay" },
-  ],
-  TRY: [
-    { id: "Papara", label: "Papara" },
-    { id: "BANK", label: "Bank Transfer" },
-  ],
-  AED: [
-    { id: "BANK", label: "Bank Transfer" },
-    { id: "WISE", label: "Wise" },
-  ],
-  EUR: [
-    { id: "SEPA", label: "SEPA" },
-    { id: "Revolut", label: "Revolut" },
-    { id: "WISE", label: "Wise" },
-  ],
-  GBP: [
-    { id: "WISE", label: "Wise" },
-    { id: "Revolut", label: "Revolut" },
-    { id: "BANK", label: "Bank Transfer" },
-  ],
+  LKR: BANK_TRANSFER_OPTIONS.slice(),
 };
 
 export const MERCHANT_TYPES = [
@@ -120,17 +71,3 @@ export const MERCHANT_TYPES = [
 ] as const;
 
 export type MerchantTypeId = (typeof MERCHANT_TYPES)[number]["id"];
-
-/** Default set of fiats to scan for cross-country arbitrage. */
-export const DEFAULT_ARB_FIATS = [
-  "LKR",
-  "INR",
-  "PKR",
-  "BDT",
-  "PHP",
-  "IDR",
-  "NGN",
-  "TRY",
-  "VND",
-  "THB",
-];

@@ -6,7 +6,7 @@ import { LiveDot } from "@/components/common/live-dot";
 import { MarketStar } from "@/components/workspace/star-button";
 import { fetchBothSides, normalizeAds } from "@/lib/binance";
 import { buildMarket } from "@/lib/analytics";
-import { ASSETS, FIATS } from "@/lib/constants";
+import { ASSET, FIAT, resolveBankPayTypes } from "@/lib/constants";
 import { Empty } from "@/components/common/empty";
 import { CloudOff } from "lucide-react";
 
@@ -14,17 +14,16 @@ export const revalidate = 20;
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
 
-function parseFilters(sp: Record<string, string | string[] | undefined>): FilterState {
-  const asset = String(sp.asset ?? "USDT").toUpperCase();
-  const fiat = String(sp.fiat ?? "LKR").toUpperCase();
-  const payType = String(sp.payType ?? "");
-  const merchantType = String(sp.merchantType ?? "all");
-
+function parseFilters(
+  sp: Record<string, string | string[] | undefined>,
+): FilterState {
+  // Asset + fiat are locked to USDT/LKR; payType narrows to one of the two
+  // bank identifiers or stays empty to mean "both".
   return {
-    asset: (ASSETS as readonly string[]).includes(asset) ? asset : "USDT",
-    fiat: FIATS.some((f) => f.code === fiat) ? fiat : "LKR",
-    payType,
-    merchantType: merchantType === "merchant" ? "merchant" : "all",
+    asset: ASSET,
+    fiat: FIAT.code,
+    payType: String(sp.payType ?? ""),
+    merchantType: String(sp.merchantType ?? "all") === "merchant" ? "merchant" : "all",
   };
 }
 
@@ -37,7 +36,7 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
     const { buy, sell } = await fetchBothSides({
       asset: filters.asset,
       fiat: filters.fiat,
-      payTypes: filters.payType ? [filters.payType] : [],
+      payTypes: resolveBankPayTypes(filters.payType),
       publisherType: filters.merchantType === "merchant" ? "merchant" : null,
       rows: 20,
     });
@@ -50,8 +49,7 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
     snapshotOrNull = null;
   }
 
-  const fiat = FIATS.find((f) => f.code === filters.fiat);
-  const subtitle = `${filters.asset} / ${filters.fiat}${fiat ? ` · ${fiat.name}` : ""}`;
+  const subtitle = `${filters.asset} / ${filters.fiat} · ${FIAT.name}`;
 
   return (
     <>
@@ -63,8 +61,8 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         <SectionHeader
           kicker="Market overview"
-          title={`${filters.asset} on Binance P2P · ${fiat?.flag ?? ""} ${filters.fiat}`}
-          description="Top-of-book prices, round-trip spread, live depth and the advertisements you can actually trade against — refreshed every 20 seconds."
+          title={`${FIAT.flag} USDT on Binance P2P · LKR bank transfers`}
+          description="Top-of-book prices, round-trip spread, live depth and the advertisements you can actually trade against — scoped to Sri Lankan bank transfers. Refreshed every 20 seconds."
         />
 
         <FilterBar initial={filters} />

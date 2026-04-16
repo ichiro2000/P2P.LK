@@ -1,7 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
-  ArrowLeftRight,
   BarChart3,
   Bell,
   Briefcase,
@@ -34,13 +33,7 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/",
         label: "Live Markets",
         icon: Activity,
-        description: "Best prices, spread, depth — refreshed every 20s",
-      },
-      {
-        href: "/arbitrage",
-        label: "Arbitrage",
-        icon: ArrowLeftRight,
-        description: "Cross-market spread opportunities",
+        description: "Best LKR prices, spread, depth — refreshed every 20s",
       },
       {
         href: "/historical",
@@ -92,7 +85,7 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/reports",
         label: "Reports",
         icon: BarChart3,
-        description: "CSV exports: recap, arbitrage, merchants",
+        description: "CSV exports: daily recap & merchant scorecard",
       },
     ],
   },

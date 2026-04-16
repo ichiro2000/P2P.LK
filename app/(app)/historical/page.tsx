@@ -12,7 +12,7 @@ import {
   RANGES,
   type RangeKey,
 } from "@/lib/db/queries";
-import { ASSETS, FIATS, getFiat } from "@/lib/constants";
+import { ASSET, FIAT } from "@/lib/constants";
 import { FilterBar, type FilterState } from "@/components/market/filter-bar";
 import { PriceChart } from "@/components/historical/price-chart";
 import { DepthChart } from "@/components/historical/depth-chart";
@@ -30,13 +30,11 @@ type SP = Promise<Record<string, string | string[] | undefined>>;
 function parseFilters(
   sp: Record<string, string | string[] | undefined>,
 ): FilterState {
-  const asset = String(sp.asset ?? "USDT").toUpperCase();
-  const fiat = String(sp.fiat ?? "LKR").toUpperCase();
   return {
-    asset: (ASSETS as readonly string[]).includes(asset) ? asset : "USDT",
-    fiat: FIATS.some((f) => f.code === fiat) ? fiat : "LKR",
-    payType: "",
-    merchantType: "all",
+    asset: ASSET,
+    fiat: FIAT.code,
+    payType: String(sp.payType ?? ""),
+    merchantType: String(sp.merchantType ?? "all") === "merchant" ? "merchant" : "all",
   };
 }
 
@@ -56,9 +54,8 @@ export default async function HistoricalPage({
     listTrackedMarkets("30d"),
   ]);
 
-  const fiat = getFiat(filters.fiat);
-  const symbol = fiat?.symbol ?? filters.fiat;
-  const subtitle = `${filters.asset} / ${filters.fiat}${fiat ? ` · ${fiat.name}` : ""}`;
+  const symbol = FIAT.symbol;
+  const subtitle = `${ASSET} / ${FIAT.code} · ${FIAT.name}`;
 
   const mids = snapshots
     .map((s) => s.mid)

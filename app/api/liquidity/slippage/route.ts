@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchBothSides, normalizeAds } from "@/lib/binance";
 import { computeSlippage } from "@/lib/liquidity";
+import { resolveBankPayTypes } from "@/lib/constants";
 import type { TradeType } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -33,6 +34,7 @@ export async function GET(req: NextRequest) {
       asset,
       fiat,
       rows: 20,
+      payTypes: resolveBankPayTypes(""),
       publisherType: null,
     });
     const ads = [

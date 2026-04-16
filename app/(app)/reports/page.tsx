@@ -7,14 +7,13 @@ import { ReportViewer } from "@/components/reports/report-viewer";
 import { Empty } from "@/components/common/empty";
 import { RangeTabs } from "@/components/historical/range-tabs";
 import {
-  arbitrageSummaryReport,
   dailyRecapReport,
   listAvailableMarkets,
   merchantScorecardReport,
   type ReportDocument,
 } from "@/lib/reports";
 import { listTrackedMarkets, RANGES, type RangeKey } from "@/lib/db/queries";
-import { ASSETS, FIATS, getFiat } from "@/lib/constants";
+import { ASSET, FIAT } from "@/lib/constants";
 import { Clock } from "lucide-react";
 
 export const metadata = { title: "Reports" };
@@ -25,13 +24,11 @@ type SP = Promise<Record<string, string | string[] | undefined>>;
 function parseFilters(
   sp: Record<string, string | string[] | undefined>,
 ): FilterState {
-  const asset = String(sp.asset ?? "USDT").toUpperCase();
-  const fiat = String(sp.fiat ?? "LKR").toUpperCase();
   return {
-    asset: (ASSETS as readonly string[]).includes(asset) ? asset : "USDT",
-    fiat: FIATS.some((f) => f.code === fiat) ? fiat : "LKR",
-    payType: "",
-    merchantType: "all",
+    asset: ASSET,
+    fiat: FIAT.code,
+    payType: String(sp.payType ?? ""),
+    merchantType: String(sp.merchantType ?? "all") === "merchant" ? "merchant" : "all",
   };
 }
 
@@ -42,7 +39,8 @@ export default async function ReportsPage({
 }) {
   const sp = await searchParams;
   const filters = parseFilters(sp);
-  const kind = (String(sp.kind ?? "recap") as ReportKind) || "recap";
+  const kindRaw = String(sp.kind ?? "recap") as ReportKind;
+  const kind: ReportKind = kindRaw === "merchants" ? "merchants" : "recap";
   const rangeKey = String(sp.range ?? "24h") as RangeKey;
   const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
 
@@ -58,9 +56,7 @@ export default async function ReportsPage({
   let errorMsg: string | null = null;
 
   try {
-    if (kind === "arbitrage") {
-      doc = await arbitrageSummaryReport(filters.asset);
-    } else if (kind === "merchants") {
+    if (kind === "merchants") {
       doc = await merchantScorecardReport(filters.asset, filters.fiat);
     } else if (hasHistory) {
       doc = await dailyRecapReport(filters.asset, filters.fiat, range);
@@ -69,8 +65,7 @@ export default async function ReportsPage({
     errorMsg = err instanceof Error ? err.message : "Report generation failed";
   }
 
-  const fiat = getFiat(filters.fiat);
-  const subtitle = `${filters.asset} / ${filters.fiat}${fiat ? ` · ${fiat.name}` : ""}`;
+  const subtitle = `${ASSET} / ${FIAT.code} · ${FIAT.name}`;
 
   return (
     <>
@@ -86,14 +81,14 @@ export default async function ReportsPage({
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         <SectionHeader
           kicker="Reports"
-          title="Exportable snapshots of your markets"
-          description="Pick a report type, set your filters, and download a CSV you can paste into a spreadsheet or share with a counterparty. Daily recap reads the ingested time-series; arbitrage and merchant scorecards run against the live feed."
+          title="Exportable snapshots of the LKR bank market"
+          description="Pick a report type, set your filters, and download a CSV you can paste into a spreadsheet or share with a counterparty. Daily recap reads the ingested time-series; merchant scorecards run against the live feed."
           right={kind === "recap" ? <RangeTabs value={range} /> : null}
         />
 
         <ReportPicker value={kind} />
 
-        {kind !== "arbitrage" && <FilterBar initial={filters} />}
+        <FilterBar initial={filters} />
 
         {errorMsg ? (
           <Empty
@@ -114,7 +109,7 @@ export default async function ReportsPage({
               kind === "recap"
                 ? tracked.length === 0
                   ? "The ingest worker hasn't run. Start it with `npm run ingest:loop` to accumulate snapshots, then come back to generate a recap."
-                  : `Tracked markets with history: ${tracked.map((t) => `${t.asset}/${t.fiat}`).join(", ")}. Switch the filter to one of those.`
+                  : `Tracked markets with history: ${tracked.map((t) => `${t.asset}/${t.fiat}`).join(", ")}.`
                 : "Pick a report type above to begin."
             }
           />

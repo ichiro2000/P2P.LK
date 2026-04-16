@@ -2,9 +2,9 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Activity, ArrowLeftRight, Users } from "lucide-react";
+import { Activity, Users } from "lucide-react";
 
-type ReportKind = "recap" | "arbitrage" | "merchants";
+type ReportKind = "recap" | "merchants";
 
 const KINDS: {
   id: ReportKind;
@@ -19,15 +19,9 @@ const KINDS: {
     icon: Activity,
   },
   {
-    id: "arbitrage",
-    label: "Arbitrage summary",
-    description: "Live cross-market opportunities",
-    icon: ArrowLeftRight,
-  },
-  {
     id: "merchants",
     label: "Merchant scorecard",
-    description: "Counterparty ranking for a single market",
+    description: "Counterparty ranking for the LKR bank market",
     icon: Users,
   },
 ];
@@ -44,7 +38,7 @@ export function ReportPicker({ value }: { value: ReportKind }) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {KINDS.map((k) => {
         const active = k.id === value;
         const Icon = k.icon;

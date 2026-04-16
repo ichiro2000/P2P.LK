@@ -11,11 +11,7 @@ import { computeRiskReport } from "@/lib/risk";
 import { mean, stdev } from "@/lib/stats";
 import { fetchBothSides, normalizeAds } from "@/lib/binance";
 import { buildMarket, summarizeMerchants } from "@/lib/analytics";
-import {
-  withinMarketArbitrage,
-  type ArbitrageRow,
-} from "@/lib/analytics";
-import { DEFAULT_ARB_FIATS } from "@/lib/constants";
+import { resolveBankPayTypes } from "@/lib/constants";
 
 /** ── Shared types ────────────────────────────────────────────────────── */
 
@@ -220,107 +216,6 @@ export async function dailyRecapReport(
   };
 }
 
-/** ── Arbitrage summary ───────────────────────────────────────────────── */
-
-export async function arbitrageSummaryReport(
-  asset = "USDT",
-  fiats: string[] = DEFAULT_ARB_FIATS,
-  feePct = 0.005,
-  slipPct = 0.002,
-): Promise<ReportDocument> {
-  const snapshots = await Promise.all(
-    fiats.map(async (fiat) => {
-      try {
-        const { buy, sell } = await fetchBothSides({
-          asset,
-          fiat,
-          rows: 10,
-          publisherType: null,
-        });
-        const ads = [
-          ...normalizeAds(buy, "BUY"),
-          ...normalizeAds(sell, "SELL"),
-        ];
-        return buildMarket(asset, fiat, ads);
-      } catch {
-        return buildMarket(asset, fiat, []);
-      }
-    }),
-  );
-
-  const rows: ArbitrageRow[] = withinMarketArbitrage(snapshots, feePct, slipPct);
-
-  return {
-    kind: "arbitrage-summary",
-    title: `Arbitrage summary · ${asset}`,
-    subtitle: `Within-market round-trip across ${fiats.length} fiats`,
-    generatedAt: new Date().toISOString(),
-    meta: [
-      {
-        label: "Fee assumption",
-        value: `${(feePct * 100).toFixed(2)}%`,
-      },
-      {
-        label: "Slippage assumption",
-        value: `${(slipPct * 100).toFixed(2)}%`,
-      },
-      {
-        label: "Positive opps",
-        value: `${rows.filter((r) => r.netPct > 0).length}/${rows.length}`,
-      },
-      {
-        label: "Best net",
-        value:
-          rows.length > 0
-            ? `${(rows[0].netPct * 100).toFixed(2)}% (${rows[0].asset}/${rows[0].buyFiat})`
-            : "—",
-      },
-    ],
-    tables: [
-      {
-        id: "arbitrage",
-        title: "Within-market opportunities",
-        subtitle: "Buy asset on SELL side, sell on BUY side",
-        columns: [
-          { key: "market", header: "Market" },
-          { key: "buyPrice", header: "Buy at", format: "price", align: "right" },
-          { key: "sellPrice", header: "Sell at", format: "price", align: "right" },
-          { key: "grossPct", header: "Gross", format: "pct", align: "right" },
-          { key: "netPct", header: "Net", format: "pct", align: "right" },
-          {
-            key: "depth",
-            header: "Depth (asset)",
-            format: "compact",
-            align: "right",
-          },
-          {
-            key: "liquidityScore",
-            header: "Liquidity",
-            format: "int",
-            align: "right",
-          },
-          {
-            key: "riskScore",
-            header: "Risk",
-            format: "int",
-            align: "right",
-          },
-        ],
-        rows: rows.map((r) => ({
-          market: `${r.asset}/${r.buyFiat}`,
-          buyPrice: r.buyPrice,
-          sellPrice: r.sellPrice,
-          grossPct: r.grossPct,
-          netPct: r.netPct,
-          depth: r.depth,
-          liquidityScore: r.liquidityScore,
-          riskScore: r.riskScore,
-        })),
-      },
-    ],
-  };
-}
-
 /** ── Merchant rail competitiveness ───────────────────────────────────── */
 
 /**
@@ -336,6 +231,7 @@ export async function merchantScorecardReport(
     asset,
     fiat,
     rows: 20,
+    payTypes: resolveBankPayTypes(""),
     publisherType: null,
   });
   const ads = [

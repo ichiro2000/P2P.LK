@@ -22,7 +22,7 @@ import {
   RANGES,
   type RangeKey,
 } from "@/lib/db/queries";
-import { ASSETS, FIATS, getFiat } from "@/lib/constants";
+import { ASSET, FIAT, resolveBankPayTypes } from "@/lib/constants";
 import { formatCompact, formatFiat } from "@/lib/format";
 import { RangeTabs } from "@/components/historical/range-tabs";
 
@@ -34,13 +34,11 @@ type SP = Promise<Record<string, string | string[] | undefined>>;
 function parseFilters(
   sp: Record<string, string | string[] | undefined>,
 ): FilterState {
-  const asset = String(sp.asset ?? "USDT").toUpperCase();
-  const fiat = String(sp.fiat ?? "LKR").toUpperCase();
   return {
-    asset: (ASSETS as readonly string[]).includes(asset) ? asset : "USDT",
-    fiat: FIATS.some((f) => f.code === fiat) ? fiat : "LKR",
-    payType: "",
-    merchantType: "all",
+    asset: ASSET,
+    fiat: FIAT.code,
+    payType: String(sp.payType ?? ""),
+    merchantType: String(sp.merchantType ?? "all") === "merchant" ? "merchant" : "all",
   };
 }
 
@@ -54,9 +52,8 @@ export default async function LiquidityPage({
   const rangeKey = String(sp.range ?? "24h") as RangeKey;
   const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
 
-  const fiatMeta = getFiat(filters.fiat);
-  const symbol = fiatMeta?.symbol ?? filters.fiat;
-  const subtitle = `${filters.asset} / ${filters.fiat}${fiatMeta ? ` · ${fiatMeta.name}` : ""}`;
+  const symbol = FIAT.symbol;
+  const subtitle = `${ASSET} / ${FIAT.code} · ${FIAT.name}`;
 
   // Live ads for concentration & slippage
   let concentrationSell = null;
@@ -67,6 +64,7 @@ export default async function LiquidityPage({
       asset: filters.asset,
       fiat: filters.fiat,
       rows: 20,
+      payTypes: resolveBankPayTypes(filters.payType),
       publisherType: null,
     });
     const ads = [

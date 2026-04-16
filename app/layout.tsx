@@ -18,19 +18,18 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "P2P.LK — Binance P2P Analytics",
+    default: "P2P.LK — Sri Lankan Binance P2P Analytics",
     template: "%s · P2P.LK",
   },
   description:
-    "Live Binance P2P market data, cross-market spread finder, and merchant analytics for Sri Lanka and beyond.",
+    "Live Binance P2P analytics for USDT/LKR bank transfers — prices, spread, merchant trust, liquidity and anomaly detection.",
   applicationName: "P2P.LK",
   keywords: [
     "Binance P2P",
-    "P2P analytics",
     "LKR USDT",
-    "arbitrage",
-    "merchant analytics",
     "Sri Lanka crypto",
+    "bank transfer",
+    "merchant analytics",
   ],
 };
 
