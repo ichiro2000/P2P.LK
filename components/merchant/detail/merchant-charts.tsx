@@ -146,7 +146,7 @@ export function MerchantPriceChart({
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
                 data={data}
-                margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
               >
                 <XAxis
                   dataKey="t"
@@ -255,7 +255,7 @@ export function MerchantSpreadChart({
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart
                 data={data}
-                margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
               >
                 <defs>
                   <linearGradient id="mSpreadFill" x1="0" y1="0" x2="0" y2="1">
@@ -339,7 +339,7 @@ export function MerchantPremiumChart({ points }: { points: MerchantPoint[] }) {
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
                 data={data}
-                margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
               >
                 <XAxis
                   dataKey="t"
@@ -421,7 +421,7 @@ export function MerchantDepthChart({
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart
                 data={data}
-                margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
               >
                 <defs>
                   <linearGradient id="mDepthFill" x1="0" y1="0" x2="0" y2="1">
@@ -499,7 +499,7 @@ export function MerchantAdCountChart({ points }: { points: MerchantPoint[] }) {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart
                 data={data}
-                margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
               >
                 <defs>
                   <linearGradient id="mAdBuyFill" x1="0" y1="0" x2="0" y2="1">

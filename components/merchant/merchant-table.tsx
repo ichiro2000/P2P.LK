@@ -144,7 +144,7 @@ export function MerchantTable({
                   onClick={() => toggle("avgReleaseSec")}
                 />
               </TableHead>
-              <TableHead className="hidden text-right lg:table-cell">
+              <TableHead className="hidden text-right xl:table-cell">
                 <SortH
                   label="Last seen"
                   active={sortKey === "lastSeenTs"}
@@ -152,7 +152,7 @@ export function MerchantTable({
                   onClick={() => toggle("lastSeenTs")}
                 />
               </TableHead>
-              <TableHead className="hidden md:table-cell">Rails</TableHead>
+              <TableHead className="hidden lg:table-cell">Rails</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -204,8 +204,8 @@ function MerchantRowCmp({
       )}
     >
       <TableCell className="py-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="font-mono text-[10px] tabular-nums text-muted-foreground w-5 text-right">
+        <div className="flex max-w-[240px] items-center gap-2 min-w-0">
+          <span className="font-mono text-[10px] tabular-nums text-muted-foreground w-5 text-right shrink-0">
             #{rank}
           </span>
           <div className="relative shrink-0">
@@ -346,7 +346,7 @@ function MerchantRowCmp({
         {formatDuration(m.avgReleaseSec)}
       </TableCell>
 
-      <TableCell className="hidden py-3 text-right text-[12px] text-muted-foreground lg:table-cell">
+      <TableCell className="hidden py-3 text-right text-[12px] text-muted-foreground xl:table-cell">
         {m.isActive ? (
           <span className="font-mono text-[color:var(--color-buy)]">now</span>
         ) : (
@@ -356,7 +356,7 @@ function MerchantRowCmp({
         )}
       </TableCell>
 
-      <TableCell className="hidden py-3 md:table-cell">
+      <TableCell className="hidden py-3 lg:table-cell">
         <div className="flex flex-wrap gap-1">
           {m.payMethods.slice(0, 2).map((pm) => (
             <Badge
