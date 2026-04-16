@@ -237,5 +237,11 @@ export async function merchantChurnWindow(
         gte(schema.merchantSnapshots.ts, since),
       ),
     )
-    .groupBy(schema.merchantSnapshots.merchantId);
+    // Postgres requires non-aggregated selected columns to be in GROUP BY.
+    // merchant_name is 1:1 with merchant_id in this table so grouping by both
+    // produces the same logical groups.
+    .groupBy(
+      schema.merchantSnapshots.merchantId,
+      schema.merchantSnapshots.merchantName,
+    );
 }
