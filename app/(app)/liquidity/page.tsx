@@ -164,10 +164,10 @@ export default async function LiquidityPage({
                           )
                         : "—"
                     }
-                    footnote="BID + ASK notional"
+                    footnote="Buy + Sell ads notional"
                   />
                   <Stat
-                    label="Concentration (ASK)"
+                    label="Concentration (sell)"
                     value={
                       concentrationSell
                         ? concentrationSell.hhi.toFixed(3)

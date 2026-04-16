@@ -210,7 +210,7 @@ export function WorkspacePanel() {
             />
           ) : (
             <div className="rounded-lg border border-border bg-card/60 overflow-hidden">
-              {visits.map((v, i) => (
+              {visits.map((v) => (
                 <Link
                   key={`${v.path}-${v.at}`}
                   href={`${v.path}${v.search ? `?${v.search}` : ""}`}
@@ -228,9 +228,8 @@ export function WorkspacePanel() {
                   </div>
                   <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/70">
                     {formatDistanceToNow(new Date(v.at), {
-                      addSuffix: false,
+                      addSuffix: true,
                     })}
-                    {i === 0 ? "" : " ago"}
                   </span>
                 </Link>
               ))}

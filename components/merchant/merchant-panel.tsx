@@ -81,10 +81,12 @@ export function MerchantPanel({
     filtered.length > 0
       ? filtered.reduce((s, m) => s + m.completionRate, 0) / filtered.length
       : 0;
-  const totalDepthFiat = filtered.reduce(
-    (s, m) => s + m.totalAvailableFiat,
-    0,
-  );
+  // Depth is a live metric — only active merchants contribute a real
+  // tradable book. Summing inactive merchants' last-known depth would
+  // massively inflate the number (historical stale data).
+  const totalDepthFiat = directory
+    .filter((m) => m.isActive)
+    .reduce((s, m) => s + m.totalAvailableFiat, 0);
   const avgTrust =
     filtered.length > 0
       ? filtered.reduce((s, m) => s + m.trustScore, 0) / filtered.length
@@ -115,9 +117,9 @@ export function MerchantPanel({
               footnote="30d order completion"
             />
             <Stat
-              label="Market depth"
+              label="Live market depth"
               value={`${symbol} ${formatCompact(totalDepthFiat)}`}
-              footnote={`${initial.asset} tradable${activeOnly ? "" : " (live)"}`}
+              footnote={`Across ${activeCount} active merchants`}
             />
           </CardContent>
         </Card>

@@ -43,6 +43,14 @@ function binanceAdvertiserUrl(id: string): string {
   return `https://c2c.binance.com/en/advertiserDetail?advertiserNo=${encodeURIComponent(id)}`;
 }
 
+/** Compact the Binance pay-method labels for a narrow badge. */
+function shortPayRail(name: string): string {
+  if (/\(\s*sri lanka\s*\)/i.test(name)) return "LK Bank";
+  if (/^bank transfer/i.test(name)) return "Bank";
+  if (/^trans\s*bank/i.test(name)) return "Trans Bank";
+  return name;
+}
+
 export function MerchantTable({
   merchants,
   symbol,
@@ -87,7 +95,7 @@ export function MerchantTable({
         <Table>
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="w-[240px]">Merchant</TableHead>
+              <TableHead className="w-[200px]">Merchant</TableHead>
               <TableHead className="text-right">
                 <SortH
                   label="Trust"
@@ -128,7 +136,7 @@ export function MerchantTable({
                   onClick={() => toggle("premiumVsMedian")}
                 />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className="hidden text-right xl:table-cell">
                 <SortH
                   label="Release"
                   active={sortKey === "avgReleaseSec"}
@@ -136,7 +144,7 @@ export function MerchantTable({
                   onClick={() => toggle("avgReleaseSec")}
                 />
               </TableHead>
-              <TableHead className="text-right">
+              <TableHead className="hidden text-right lg:table-cell">
                 <SortH
                   label="Last seen"
                   active={sortKey === "lastSeenTs"}
@@ -144,7 +152,7 @@ export function MerchantTable({
                   onClick={() => toggle("lastSeenTs")}
                 />
               </TableHead>
-              <TableHead>Rails</TableHead>
+              <TableHead className="hidden md:table-cell">Rails</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -283,13 +291,6 @@ function MerchantRowCmp({
                   </span>
                 </>
               )}
-              <span>·</span>
-              <span
-                className="font-mono text-[10px] tabular-nums text-muted-foreground/70"
-                title={m.id}
-              >
-                {m.id.slice(0, 8)}…
-              </span>
             </div>
           </div>
         </div>
@@ -341,11 +342,11 @@ function MerchantRowCmp({
         )}
       </TableCell>
 
-      <TableCell className="py-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground">
+      <TableCell className="hidden py-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground xl:table-cell">
         {formatDuration(m.avgReleaseSec)}
       </TableCell>
 
-      <TableCell className="py-3 text-right text-[12px] text-muted-foreground">
+      <TableCell className="hidden py-3 text-right text-[12px] text-muted-foreground lg:table-cell">
         {m.isActive ? (
           <span className="font-mono text-[color:var(--color-buy)]">now</span>
         ) : (
@@ -355,23 +356,25 @@ function MerchantRowCmp({
         )}
       </TableCell>
 
-      <TableCell className="py-3">
+      <TableCell className="hidden py-3 md:table-cell">
         <div className="flex flex-wrap gap-1">
-          {m.payMethods.slice(0, 3).map((pm) => (
+          {m.payMethods.slice(0, 2).map((pm) => (
             <Badge
               key={pm}
               variant="secondary"
               className="bg-secondary/70 text-[10px] text-foreground/80"
+              title={pm}
             >
-              {pm}
+              {shortPayRail(pm)}
             </Badge>
           ))}
-          {m.payMethods.length > 3 && (
+          {m.payMethods.length > 2 && (
             <Badge
               variant="outline"
               className="text-[10px] border-dashed text-muted-foreground"
+              title={m.payMethods.slice(2).join(", ")}
             >
-              +{m.payMethods.length - 3}
+              +{m.payMethods.length - 2}
             </Badge>
           )}
           {m.payMethods.length === 0 && (

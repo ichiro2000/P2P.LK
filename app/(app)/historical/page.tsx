@@ -80,7 +80,7 @@ export default async function HistoricalPage({
         <SectionHeader
           kicker="Time series"
           title={`${filters.asset}/${filters.fiat} over ${range}`}
-          description="Prices, spreads and depth captured by the ingest worker every 5 minutes on Vercel Cron (or locally via npm run ingest:loop)."
+          description="Prices, spreads and depth captured every few minutes by our ingest worker. Switch the range tabs to zoom out."
           right={<RangeTabs value={range} />}
         />
 

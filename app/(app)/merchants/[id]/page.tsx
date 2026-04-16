@@ -75,8 +75,8 @@ export default async function MerchantDetailPage({
 }) {
   const { id } = await params;
   const sp = await searchParams;
-  const rangeKey = String(sp.range ?? "7d") as RangeKey;
-  const range: RangeKey = rangeKey in RANGES ? rangeKey : "7d";
+  const rangeKey = String(sp.range ?? "24h") as RangeKey;
+  const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
 
   const asset = ASSET;
   const fiat = FIAT.code;
