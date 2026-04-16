@@ -157,6 +157,35 @@ export async function depthHeatmap(
   return { cells: flat, max: globalMax, totalPoints: rows.length };
 }
 
+/**
+ * Lightweight — just the (ts, mid) pairs in a market range. Used as an overlay
+ * on the per-merchant price chart so the viewer can see the merchant's price
+ * relative to the market median at each tick.
+ */
+export async function listMarketMids(
+  asset: string,
+  fiat: string,
+  range: RangeKey,
+): Promise<Array<{ ts: number; mid: number | null }>> {
+  const db = await getDb();
+  const since = rangeSinceSeconds(range);
+  const rows = await db
+    .select({
+      ts: schema.marketSnapshots.ts,
+      mid: schema.marketSnapshots.mid,
+    })
+    .from(schema.marketSnapshots)
+    .where(
+      and(
+        eq(schema.marketSnapshots.asset, asset),
+        eq(schema.marketSnapshots.fiat, fiat),
+        gte(schema.marketSnapshots.ts, since),
+      ),
+    )
+    .orderBy(asc(schema.marketSnapshots.ts));
+  return rows;
+}
+
 /** ── Merchant queries ────────────────────────────────────────────────── */
 
 export async function merchantHistory(
@@ -179,6 +208,31 @@ export async function merchantHistory(
       ),
     )
     .orderBy(asc(schema.merchantSnapshots.ts));
+}
+
+/**
+ * Most recent snapshot row we have for a single merchant in this market.
+ * Used by the merchant detail page to populate the header card.
+ */
+export async function latestMerchantSnapshot(
+  merchantId: string,
+  asset: string,
+  fiat: string,
+): Promise<MerchantSnapshotRow | undefined> {
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(schema.merchantSnapshots)
+    .where(
+      and(
+        eq(schema.merchantSnapshots.merchantId, merchantId),
+        eq(schema.merchantSnapshots.asset, asset),
+        eq(schema.merchantSnapshots.fiat, fiat),
+      ),
+    )
+    .orderBy(desc(schema.merchantSnapshots.ts))
+    .limit(1);
+  return rows[0];
 }
 
 export async function merchantsInLatestTick(
