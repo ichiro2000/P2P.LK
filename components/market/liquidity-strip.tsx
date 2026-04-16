@@ -49,16 +49,16 @@ export function LiquidityStrip({ market }: { market: MarketSnapshot }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-3 pb-4">
-        {/* BID (publisher BUY ads) = retail sell context → red.
-            ASK (publisher SELL ads) = retail buy context → green. */}
+        {/* Buy Ads (publisher buying) = retail sell context → red.
+            Sell Ads (publisher selling) = retail buy context → green. */}
         <Bar
-          label="BID"
+          label="BUY ADS"
           pct={bidPct}
           value={`${formatCompact(bid)} ${market.asset}`}
           tone="sell"
         />
         <Bar
-          label="ASK"
+          label="SELL ADS"
           pct={askPct}
           value={`${formatCompact(ask)} ${market.asset}`}
           tone="buy"

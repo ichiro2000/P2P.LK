@@ -135,7 +135,7 @@ export default async function HistoricalPage({
                         ? formatPct(summary.avgSpreadPct, { frac: 2 })
                         : "—"
                     }
-                    footnote="Ask − Bid, mean"
+                    footnote="Sell − Buy ads, mean"
                   />
                   <Stat
                     label="Average depth"
@@ -145,7 +145,7 @@ export default async function HistoricalPage({
                         ? `${formatCompact(summary.avgBidDepth + summary.avgAskDepth)} ${filters.asset}`
                         : "—"
                     }
-                    footnote="Top-20 bid+ask"
+                    footnote="Top-20 Buy + Sell ads"
                   />
                 </CardContent>
               </Card>

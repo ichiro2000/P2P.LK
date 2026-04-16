@@ -50,7 +50,7 @@ export function DepthTrend({
           Total depth trend
         </CardTitle>
         <span className="font-mono text-[10px] text-muted-foreground">
-          BID + ASK ({asset}) · SMA20
+          Buy + Sell ads ({asset}) · SMA20
         </span>
       </CardHeader>
       <CardContent>

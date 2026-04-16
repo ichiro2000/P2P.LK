@@ -112,7 +112,7 @@ export function DepthChart({
                 <Area
                   type="monotone"
                   dataKey="bid"
-                  name="BID"
+                  name="Buy Ads"
                   stackId="1"
                   stroke="var(--color-sell)"
                   fill="url(#bidDepthFill)"
@@ -122,7 +122,7 @@ export function DepthChart({
                 <Area
                   type="monotone"
                   dataKey="ask"
-                  name="ASK"
+                  name="Sell Ads"
                   stackId="1"
                   stroke="var(--color-buy)"
                   fill="url(#askDepthFill)"

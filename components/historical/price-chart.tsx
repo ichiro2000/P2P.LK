@@ -57,10 +57,10 @@ export function PriceChart({
           Price history
         </CardTitle>
         <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
-          {/* Retail-centric palette: BID (publisher buying) = red,
-              ASK (publisher selling = retail buying) = green. */}
-          <LegendSwatch color="var(--color-sell)" label="BID" />
-          <LegendSwatch color="var(--color-buy)" label="ASK" />
+          {/* Retail-centric palette: Buy Ads (publisher buying) = red,
+              Sell Ads (publisher selling = retail buying) = green. */}
+          <LegendSwatch color="var(--color-sell)" label="BUY ADS" />
+          <LegendSwatch color="var(--color-buy)" label="SELL ADS" />
           <LegendSwatch color="var(--color-foreground)" label="MID" dim />
           {showMovingAverages && (
             <>
@@ -152,7 +152,7 @@ export function PriceChart({
                 <Area
                   type="monotone"
                   dataKey="bid"
-                  name="BID"
+                  name="Buy Ads"
                   stroke="var(--color-sell)"
                   fill="url(#bidAreaFill)"
                   strokeWidth={1.5}
@@ -163,7 +163,7 @@ export function PriceChart({
                 <Area
                   type="monotone"
                   dataKey="ask"
-                  name="ASK"
+                  name="Sell Ads"
                   stroke="var(--color-buy)"
                   fill="url(#askAreaFill)"
                   strokeWidth={1.5}

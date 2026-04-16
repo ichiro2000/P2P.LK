@@ -90,11 +90,11 @@ export function DepthSnapshot({ market }: { market: MarketSnapshot }) {
           <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-sell)]" />
-              BID
+              BUY ADS
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-buy)]" />
-              ASK
+              SELL ADS
             </span>
           </div>
         </div>
@@ -190,7 +190,7 @@ export function DepthSnapshot({ market }: { market: MarketSnapshot }) {
               <Area
                 type="stepAfter"
                 dataKey="cumBid"
-                name="BID"
+                name="Buy Ads"
                 stroke="var(--color-sell)"
                 fill="url(#bidFill)"
                 strokeWidth={1.5}
@@ -199,7 +199,7 @@ export function DepthSnapshot({ market }: { market: MarketSnapshot }) {
               <Area
                 type="stepBefore"
                 dataKey="cumAsk"
-                name="ASK"
+                name="Sell Ads"
                 stroke="var(--color-buy)"
                 fill="url(#askFill)"
                 strokeWidth={1.5}

@@ -63,7 +63,7 @@ export function DepthHeatmap({
               Depth heatmap
             </CardTitle>
             <p className="mt-0.5 text-[10px] text-muted-foreground/70">
-              Avg. BID + ASK ({asset}) by weekday × hour · {totalPoints} ticks
+              Avg. Buy + Sell ads ({asset}) by weekday × hour · {totalPoints} ticks
             </p>
           </div>
           <Legend max={max} asset={asset} />

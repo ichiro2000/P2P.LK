@@ -11,7 +11,7 @@ import { Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Single headline: the market-maker spread between BUY bid and SELL ask.
+ * Single headline: the market-maker spread between the top Buy ad and top Sell ad.
  * Also shows the mid price (micro).
  */
 export function SpreadWidget({ market }: { market: MarketSnapshot }) {
@@ -45,7 +45,7 @@ export function SpreadWidget({ market }: { market: MarketSnapshot }) {
               className="max-w-[240px] text-[11px] leading-relaxed"
             >
               <p>
-                Difference between best SELL ask and best BUY bid. Wider
+                Difference between the top Sell ad and top Buy ad. Wider
                 spreads mean worse round-trip cost and often thinner liquidity.
               </p>
             </TooltipContent>
@@ -78,10 +78,10 @@ export function SpreadWidget({ market }: { market: MarketSnapshot }) {
               {mid != null ? formatFiat(mid, symbol, 2) : "—"}
             </span>
           </span>
-          {/* Bid = BUY-type ads (retail sell context) → red.
-              Ask = SELL-type ads (retail buy context) → green. */}
+          {/* Buy ads (publisher buying = retail sell context) → red.
+              Sell ads (publisher selling = retail buy context) → green. */}
           <span>
-            Bid{" "}
+            Buy ads{" "}
             <span className="font-mono tabular-nums text-[color:var(--color-sell)]">
               {market.buy.bestPrice != null
                 ? formatFiat(market.buy.bestPrice, symbol, 2)
@@ -89,7 +89,7 @@ export function SpreadWidget({ market }: { market: MarketSnapshot }) {
             </span>
           </span>
           <span>
-            Ask{" "}
+            Sell ads{" "}
             <span className="font-mono tabular-nums text-[color:var(--color-buy)]">
               {market.sell.bestPrice != null
                 ? formatFiat(market.sell.bestPrice, symbol, 2)
