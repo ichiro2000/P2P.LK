@@ -15,16 +15,6 @@ export function PricePanel({ market }: { market: MarketSnapshot }) {
   return (
     <div className="grid grid-cols-1 divide-y divide-border rounded-lg border border-border bg-card/60 md:grid-cols-2 md:divide-x md:divide-y-0">
       <PriceTile
-        tone="buy"
-        label="Top Buy Ads"
-        helper={`Highest price you can sell ${market.asset} for`}
-        price={market.buy.bestPrice}
-        symbol={symbol}
-        available={market.buy.totalAvailable}
-        asset={market.asset}
-        ads={market.buy.count}
-      />
-      <PriceTile
         tone="sell"
         label="Top Sell Ads"
         helper={`Lowest price you'll pay to buy ${market.asset}`}
@@ -33,6 +23,16 @@ export function PricePanel({ market }: { market: MarketSnapshot }) {
         available={market.sell.totalAvailable}
         asset={market.asset}
         ads={market.sell.count}
+      />
+      <PriceTile
+        tone="buy"
+        label="Top Buy Ads"
+        helper={`Highest price you can sell ${market.asset} for`}
+        price={market.buy.bestPrice}
+        symbol={symbol}
+        available={market.buy.totalAvailable}
+        asset={market.asset}
+        ads={market.buy.count}
       />
     </div>
   );
