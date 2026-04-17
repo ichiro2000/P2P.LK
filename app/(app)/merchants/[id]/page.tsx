@@ -155,6 +155,8 @@ export default async function MerchantDetailPage({
     id: latest.merchantId,
     name: latest.merchantName,
     isMerchant: Boolean(latest.isMerchant),
+    userIdentity: latest.userIdentity ?? null,
+    vipLevel: latest.vipLevel ?? null,
     isActive: activeNow,
     ordersMonth: latest.ordersMonth,
     completionRate: latest.completionRate,

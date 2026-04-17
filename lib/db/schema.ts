@@ -60,6 +60,14 @@ export const merchantSnapshots = pgTable(
     merchantId: text("merchant_id").notNull(),
     merchantName: text("merchant_name").notNull(),
     isMerchant: boolean("is_merchant"),
+    /** Binance's `userIdentity` — e.g. MASS_MERCHANT, BLOCK_MERCHANT. */
+    userIdentity: text("user_identity"),
+    /** Binance's `userGrade` — merchant-vs-user flag, NOT the tier. Kept
+     *  for completeness; prefer `vipLevel` for tier color. */
+    userGrade: integer("user_grade"),
+    /** Binance's `vipLevel` (1/2/3) — the real tier driver:
+     *  1 = Bronze, 2 = Silver, 3 = Gold. */
+    vipLevel: integer("vip_level"),
     ordersMonth: integer("orders_month"),
     completionRate: real("completion_rate"),
     avgReleaseSec: integer("avg_release_sec"),

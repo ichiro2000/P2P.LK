@@ -283,6 +283,9 @@ export type KnownMerchantRow = {
   merchantName: string;
   lastSeenTs: number;
   isMerchant: boolean | null;
+  userIdentity: string | null;
+  userGrade: number | null;
+  vipLevel: number | null;
   ordersMonth: number | null;
   completionRate: number | null;
   avgReleaseSec: number | null;
@@ -305,6 +308,9 @@ export async function listAllKnownMerchants(
     merchant_name: string;
     last_seen_ts: number | string;
     is_merchant: boolean | null;
+    user_identity: string | null;
+    user_grade: number | null;
+    vip_level: number | null;
     orders_month: number | null;
     completion_rate: number | null;
     avg_release_sec: number | null;
@@ -319,6 +325,9 @@ export async function listAllKnownMerchants(
       merchant_name,
       ts AS last_seen_ts,
       is_merchant,
+      user_identity,
+      user_grade,
+      vip_level,
       orders_month,
       completion_rate,
       avg_release_sec,
@@ -337,6 +346,9 @@ export async function listAllKnownMerchants(
     lastSeenTs: Number(r.last_seen_ts),
     isMerchant:
       r.is_merchant == null ? null : Boolean(r.is_merchant),
+    userIdentity: r.user_identity == null ? null : String(r.user_identity),
+    userGrade: r.user_grade == null ? null : Number(r.user_grade),
+    vipLevel: r.vip_level == null ? null : Number(r.vip_level),
     ordersMonth:
       r.orders_month == null ? null : Number(r.orders_month),
     completionRate:

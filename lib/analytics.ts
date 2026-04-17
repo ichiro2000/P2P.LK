@@ -119,7 +119,9 @@ export type MerchantSummary = {
   id: string;
   name: string;
   isMerchant: boolean;
+  userIdentity?: string;
   grade?: number;
+  vipLevel?: number | null;
   orders30d: number;
   completionRate: number;
   avgReleaseSec?: number;
@@ -279,6 +281,9 @@ export type KnownMerchantInput = {
   merchantName: string;
   lastSeenTs: number;
   isMerchant: boolean | null;
+  userIdentity: string | null;
+  userGrade: number | null;
+  vipLevel: number | null;
   ordersMonth: number | null;
   completionRate: number | null;
   avgReleaseSec: number | null;
@@ -354,6 +359,9 @@ export function mergeMerchantDirectory(
       id: k.merchantId,
       name: k.merchantName,
       isMerchant: Boolean(k.isMerchant),
+      userIdentity: k.userIdentity ?? undefined,
+      grade: k.userGrade ?? undefined,
+      vipLevel: k.vipLevel ?? null,
       orders30d,
       completionRate,
       avgReleaseSec,

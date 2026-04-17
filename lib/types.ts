@@ -21,6 +21,9 @@ export type BinanceAdvertiser = {
   /** e.g. MASS_MERCHANT, BLOCK_MERCHANT */
   userIdentity?: string;
   userGrade?: number;
+  /** Binance's actual tier driver (1 = Bronze, 2 = Silver, 3 = Gold).
+   *  Only populated when userType = "merchant". */
+  vipLevel?: number | null;
   monthOrderCount?: number;
   /** 0..1 */
   monthFinishRate?: number;
@@ -98,7 +101,12 @@ export type NormalizedAd = {
     id: string;
     name: string;
     isMerchant: boolean;
+    /** Binance `userIdentity` — MASS_MERCHANT, BLOCK_MERCHANT, etc. */
+    userIdentity?: string;
+    /** Binance `userGrade` — merchant-vs-user flag, NOT the tier. */
     grade?: number;
+    /** Binance `vipLevel` (1/2/3) — the real tier: bronze / silver / gold. */
+    vipLevel?: number | null;
     orders30d: number;
     completionRate: number; // 0..1
     avgReleaseSec?: number;

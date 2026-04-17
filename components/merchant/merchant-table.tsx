@@ -16,9 +16,10 @@ import {
   ArrowUp,
   ArrowUpDown,
   ExternalLink,
-  ShieldCheck,
 } from "lucide-react";
 import { MerchantStar } from "@/components/workspace/star-button";
+import { TierBadge } from "@/components/merchant/tier-badge";
+import { deriveMerchantTier } from "@/lib/merchant-tier";
 import type { MerchantRow } from "@/lib/analytics";
 import {
   formatCompact,
@@ -242,13 +243,14 @@ function MerchantRowCmp({
               >
                 <ExternalLink className="h-3 w-3" strokeWidth={2} />
               </a>
-              {m.isMerchant && (
-                <ShieldCheck
-                  className="h-3 w-3 shrink-0 text-primary"
-                  strokeWidth={2}
-                  aria-label="Verified merchant"
-                />
-              )}
+              <TierBadge
+                tier={deriveMerchantTier({
+                  isMerchant: m.isMerchant,
+                  userIdentity: m.userIdentity,
+                  vipLevel: m.vipLevel,
+                })}
+                size="xs"
+              />
               {!m.isActive && (
                 <Badge
                   variant="outline"
