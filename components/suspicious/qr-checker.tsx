@@ -16,7 +16,7 @@ type Result =
   | { kind: "checking"; decoded: string }
   | { kind: "clean"; profile: BinanceProfileRef }
   | { kind: "flagged"; profile: BinanceProfileRef; reports: SuspiciousReport[] }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; decoded?: string };
 
 export function QrChecker() {
   const [result, setResult] = useState<Result>({ kind: "idle" });
@@ -42,7 +42,11 @@ export function QrChecker() {
       );
       const json = await r.json();
       if (!r.ok) {
-        setResult({ kind: "error", message: json.error ?? `HTTP ${r.status}` });
+        setResult({
+          kind: "error",
+          message: json.error ?? `HTTP ${r.status}`,
+          decoded,
+        });
         return;
       }
       if (json.flagged) {
@@ -155,14 +159,24 @@ function ResultView({
 
   if (result.kind === "error") {
     return (
-      <div className="flex items-start gap-2 rounded-md border border-[color:var(--color-sell)]/40 bg-[color:var(--color-sell-muted)] px-3 py-2 text-sm text-[color:var(--color-sell)]">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        <div className="flex-1">
-          <p>{result.message}</p>
-          <Button variant="ghost" size="sm" className="mt-1 h-7 px-2" onClick={onReset}>
-            Try another
-          </Button>
+      <div className="space-y-2 rounded-md border border-[color:var(--color-sell)]/40 bg-[color:var(--color-sell-muted)] px-3 py-2 text-sm">
+        <div className="flex items-start gap-2 text-[color:var(--color-sell)]">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="flex-1">{result.message}</p>
         </div>
+        {result.decoded && (
+          <div className="border-t border-border/40 pt-1.5">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Decoded content
+            </div>
+            <code className="mt-0.5 block break-all font-mono text-[10px] text-muted-foreground">
+              {result.decoded}
+            </code>
+          </div>
+        )}
+        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={onReset}>
+          Try another
+        </Button>
       </div>
     );
   }
