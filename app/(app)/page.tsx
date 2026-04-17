@@ -4,7 +4,7 @@ import { LiveMarket } from "@/components/market/live-market";
 import { SectionHeader } from "@/components/common/section-header";
 import { LiveDot } from "@/components/common/live-dot";
 import { MarketStar } from "@/components/workspace/star-button";
-import { fetchBothSides, normalizeAds } from "@/lib/binance";
+import { fetchAdsDeep, normalizeAds } from "@/lib/binance";
 import { buildMarket } from "@/lib/analytics";
 import { ASSET, FIAT, resolveBankPayTypes } from "@/lib/constants";
 import { Empty } from "@/components/common/empty";
@@ -33,13 +33,18 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
 
   let snapshotOrNull = null;
   try {
-    const { buy, sell } = await fetchBothSides({
-      asset: filters.asset,
-      fiat: filters.fiat,
-      payTypes: resolveBankPayTypes(filters.payType),
-      publisherType: filters.merchantType === "merchant" ? "merchant" : null,
-      rows: 20,
-    });
+    // Deep fetch: 3 pages × 20 rows = up to 60 ads per side, vs the old 20.
+    // Tradeoff: ~3× Binance calls per cache miss, higher 429 risk on spikes.
+    // The 20-second ISR above still caches the result for all concurrent users.
+    const { buy, sell } = await fetchAdsDeep(
+      {
+        asset: filters.asset,
+        fiat: filters.fiat,
+        payTypes: resolveBankPayTypes(filters.payType),
+        publisherType: filters.merchantType === "merchant" ? "merchant" : null,
+      },
+      { pagesPerSide: 3, rowsPerPage: 20 },
+    );
     const ads = [
       ...normalizeAds(buy, "BUY"),
       ...normalizeAds(sell, "SELL"),
