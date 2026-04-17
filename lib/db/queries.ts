@@ -115,7 +115,15 @@ export async function listTrackedMarkets(range: RangeKey = "24h") {
     .orderBy(asc(schema.marketSnapshots.asset), asc(schema.marketSnapshots.fiat));
 }
 
-/** Aggregate bid+ask depth by (day-of-week, hour-of-day) in the local tz. */
+/**
+ * Aggregate bid+ask depth by (day-of-week, hour-of-day) in Asia/Colombo.
+ *
+ * Bucketing in Sri Lanka time (UTC+5:30, no DST) means the heatmap columns
+ * match what users see on the live clock — otherwise the server's tz (UTC in
+ * prod) would shift every hour column by ~5.5h.
+ */
+const SLT_OFFSET_SEC = 5 * 3600 + 30 * 60;
+
 export async function depthHeatmap(
   asset: string,
   fiat: string,
@@ -129,9 +137,9 @@ export async function depthHeatmap(
   );
 
   for (const r of rows) {
-    const d = new Date(r.ts * 1000);
-    const dow = d.getDay();
-    const hour = d.getHours();
+    const d = new Date((r.ts + SLT_OFFSET_SEC) * 1000);
+    const dow = d.getUTCDay();
+    const hour = d.getUTCHours();
     const depth = (r.bidDepth ?? 0) + (r.askDepth ?? 0);
     const cell = grid[dow][hour];
     cell.sum += depth;
