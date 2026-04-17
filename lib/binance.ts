@@ -104,7 +104,11 @@ export async function fetchAdsDeep(
     signal?: AbortSignal;
   },
 ): Promise<{ buy: BinanceAdItem[]; sell: BinanceAdItem[] }> {
-  const pagesPerSide = Math.max(1, Math.min(10, opts?.pagesPerSide ?? 5));
+  // Hard ceiling at 30 pages = 600 ads per side. The LKR book is usually
+  // under ~200 ads per side, so the early-exit on a short page kicks in well
+  // before this — the cap just prevents a runaway loop if Binance starts
+  // returning duplicates with full pages.
+  const pagesPerSide = Math.max(1, Math.min(30, opts?.pagesPerSide ?? 15));
   const rowsPerPage = Math.max(5, Math.min(20, opts?.rowsPerPage ?? 20));
 
   async function sweepSide(query: TradeType): Promise<BinanceAdItem[]> {
