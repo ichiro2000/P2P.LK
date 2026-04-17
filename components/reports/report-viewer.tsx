@@ -18,6 +18,7 @@ import {
   formatInt,
   formatPct,
   formatPrice,
+  formatSLT,
 } from "@/lib/format";
 import type { ReportDocument, ReportTable } from "@/lib/reports";
 import {
@@ -108,7 +109,7 @@ export function ReportViewer({ doc }: { doc: ReportDocument }) {
           </dl>
 
           <div className="mt-3 font-mono text-[10px] tabular-nums text-muted-foreground/70">
-            Generated {new Date(doc.generatedAt).toLocaleString()}
+            Generated {formatSLT(doc.generatedAt)} SLT
           </div>
         </CardContent>
       </Card>
@@ -229,7 +230,7 @@ function formatCell(
     case "duration":
       return formatDuration(value);
     case "datetime":
-      return new Date(Number(value)).toLocaleString();
+      return formatSLT(new Date(Number(value)));
     default:
       return Number.isFinite(value) ? String(value) : "—";
   }

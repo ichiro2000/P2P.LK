@@ -15,6 +15,7 @@ import {
   type RangeKey,
 } from "@/lib/db/queries";
 import { ASSET, FIAT } from "@/lib/constants";
+import { formatSLT } from "@/lib/format";
 import {
   MerchantHeaderCard,
   type MerchantHeaderData,
@@ -195,7 +196,7 @@ export default async function MerchantDetailPage({
           <Empty
             icon={Clock}
             title="No history yet"
-            description={`We've seen this merchant once (${new Date(latest.ts * 1000).toLocaleString()}) but don't have multi-tick history in the ${range} window. Come back after a few more ingest ticks.`}
+            description={`We've seen this merchant once (${formatSLT(latest.ts)} SLT) but don't have multi-tick history in the ${range} window. Come back after a few more ingest ticks.`}
           />
         ) : (
           <>

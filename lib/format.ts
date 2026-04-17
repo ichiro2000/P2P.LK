@@ -1,5 +1,7 @@
 /** Lightweight formatters — Intl-based, memoized per locale/currency. */
 
+import { SLT_TZ } from "@/lib/constants";
+
 const nfCache = new Map<string, Intl.NumberFormat>();
 function nf(key: string, opts: Intl.NumberFormatOptions) {
   let f = nfCache.get(key);
@@ -89,6 +91,44 @@ export function formatDuration(sec: number | null | undefined): string {
   const h = Math.floor(m / 60);
   const rm = m % 60;
   return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
+}
+
+/**
+ * Format an epoch-seconds (or Date / ISO string) timestamp in Sri Lanka Time.
+ *
+ * Use this everywhere a timestamp is rendered on the server — plain
+ * `toLocaleString()` picks up the container's tz (UTC in prod) and silently
+ * shows the wrong wall-clock to users.
+ *
+ * Default: short date + short 24h time, e.g. "17/04/2026, 14:30". Override via
+ * `opts` to customize (e.g. `{ timeStyle: "medium" }` for seconds).
+ */
+const dfCache = new Map<string, Intl.DateTimeFormat>();
+export function formatSLT(
+  input: number | string | Date | null | undefined,
+  opts?: Intl.DateTimeFormatOptions,
+): string {
+  if (input == null) return "—";
+  const d =
+    typeof input === "number"
+      ? new Date(input * 1000)
+      : typeof input === "string"
+        ? new Date(input)
+        : input;
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "—";
+  const key = JSON.stringify(opts ?? {});
+  let f = dfCache.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-GB", {
+      timeZone: SLT_TZ,
+      dateStyle: "short",
+      timeStyle: "short",
+      hour12: false,
+      ...opts,
+    });
+    dfCache.set(key, f);
+  }
+  return f.format(d);
 }
 
 /** "3s ago", "2m ago", "just now". */
