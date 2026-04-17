@@ -30,7 +30,7 @@ export function LiquidityStrip({ market }: { market: MarketSnapshot }) {
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Depth (live book)
+            Depth (top 20)
           </CardTitle>
           <span
             className={cn(
