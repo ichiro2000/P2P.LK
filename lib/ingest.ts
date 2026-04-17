@@ -52,13 +52,16 @@ export async function runIngest(
   for (const { asset, fiat } of markets) {
     try {
       // Deep sweep so the merchant directory captures the full counterparty
-      // set, not just the top 20-per-side that a single page returns.
+      // set, not just the top 20-per-side that a single page returns. 15
+      // pages × 20 rows = up to 300 ads per side, which comfortably covers
+      // the LKR market's normal size. `fetchAdsDeep` exits early once Binance
+      // returns a short page (no more results).
       const { buy, sell } = await fetchAdsDeep({
         asset,
         fiat,
         payTypes: resolveBankPayTypes(""),
         publisherType: null,
-      }, { pagesPerSide: 5, rowsPerPage: 20 });
+      }, { pagesPerSide: 15, rowsPerPage: 20 });
 
       if (buy.length === 0 && sell.length === 0) {
         // Still record the market row with nulls so gaps are visible.
