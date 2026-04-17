@@ -1,7 +1,9 @@
-import { ExternalLink, ShieldCheck } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Stat } from "@/components/common/stat";
 import { MerchantStar } from "@/components/workspace/star-button";
+import { TierBadge } from "@/components/merchant/tier-badge";
+import { deriveMerchantTier } from "@/lib/merchant-tier";
 import {
   formatCompact,
   formatDuration,
@@ -15,6 +17,8 @@ export type MerchantHeaderData = {
   id: string;
   name: string;
   isMerchant: boolean;
+  userIdentity: string | null;
+  vipLevel: number | null;
   isActive: boolean;
   ordersMonth: number | null;
   completionRate: number | null;
@@ -74,13 +78,15 @@ export function MerchantHeaderCard({ m }: { m: MerchantHeaderData }) {
                 <h1 className="truncate text-lg font-semibold text-foreground">
                   {m.name}
                 </h1>
-                {m.isMerchant && (
-                  <ShieldCheck
-                    className="h-4 w-4 text-primary"
-                    strokeWidth={2}
-                    aria-label="Verified merchant"
-                  />
-                )}
+                <TierBadge
+                  tier={deriveMerchantTier({
+                    isMerchant: m.isMerchant,
+                    userIdentity: m.userIdentity,
+                    vipLevel: m.vipLevel,
+                  })}
+                  size="md"
+                  withLabel
+                />
                 <span
                   className={cn(
                     "rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider",

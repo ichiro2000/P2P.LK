@@ -104,6 +104,14 @@ function ensureSchema(): Promise<void> {
          ON merchant_snapshots (merchant_id, asset, fiat, ts)`,
       `CREATE INDEX IF NOT EXISTS idx_merchant_market
          ON merchant_snapshots (asset, fiat, ts)`,
+      // Tier fields — added after merchant_snapshots shipped, so idempotent
+      // ADD COLUMNs keep existing deploys compatible.
+      `ALTER TABLE merchant_snapshots
+         ADD COLUMN IF NOT EXISTS user_identity TEXT`,
+      `ALTER TABLE merchant_snapshots
+         ADD COLUMN IF NOT EXISTS user_grade INTEGER`,
+      `ALTER TABLE merchant_snapshots
+         ADD COLUMN IF NOT EXISTS vip_level INTEGER`,
       `CREATE TABLE IF NOT EXISTS suspicious_takers (
         id               SERIAL PRIMARY KEY,
         ts               BIGINT NOT NULL,

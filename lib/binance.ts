@@ -162,7 +162,9 @@ export function normalizeAd(item: BinanceAdItem): NormalizedAd {
       isMerchant:
         (advertiser.userType ?? "").toLowerCase() === "merchant" ||
         /MERCHANT/i.test(advertiser.userIdentity ?? ""),
+      userIdentity: advertiser.userIdentity,
       grade: advertiser.userGrade,
+      vipLevel: advertiser.vipLevel ?? null,
       orders30d: Number(advertiser.monthOrderCount ?? 0),
       completionRate: Number(advertiser.monthFinishRate ?? 0),
       avgReleaseSec: advertiser.avgReleaseTimeOfLatestOnline,
