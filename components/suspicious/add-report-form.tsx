@@ -141,9 +141,26 @@ export function AddReportForm() {
               </div>
             )}
             {decodeError && (
-              <div className="flex items-start gap-2 rounded-md border border-[color:var(--color-sell)]/40 bg-[color:var(--color-sell-muted)] px-3 py-2 text-xs text-[color:var(--color-sell)]">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>{decodeError}</span>
+              <div className="space-y-1.5 rounded-md border border-[color:var(--color-sell)]/40 bg-[color:var(--color-sell-muted)] px-3 py-2 text-xs">
+                <div className="flex items-start gap-2 text-[color:var(--color-sell)]">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{decodeError}</span>
+                </div>
+                {decoded && (
+                  <div className="border-t border-border/40 pt-1.5">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Decoded content
+                    </div>
+                    <code className="mt-0.5 block break-all font-mono text-[10px] text-muted-foreground">
+                      {decoded}
+                    </code>
+                    <p className="mt-1 text-[10px] text-muted-foreground/70">
+                      If this looks like a Binance link but isn&apos;t matching,
+                      copy it and share with the maintainer so the parser can
+                      be extended.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             {profile && (
