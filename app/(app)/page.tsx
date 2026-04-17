@@ -23,7 +23,7 @@ function parseFilters(
     asset: ASSET,
     fiat: FIAT.code,
     payType: String(sp.payType ?? ""),
-    merchantType: String(sp.merchantType ?? "all") === "merchant" ? "merchant" : "all",
+    merchantType: String(sp.merchantType ?? "merchant") === "all" ? "all" : "merchant",
   };
 }
 
