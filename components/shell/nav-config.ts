@@ -8,6 +8,7 @@ import {
   LineChart,
   ShieldAlert,
   Users,
+  UserX,
 } from "lucide-react";
 
 export type NavItem = {
@@ -63,6 +64,12 @@ export const NAV_SECTIONS: NavSection[] = [
         label: "Risk",
         icon: ShieldAlert,
         description: "Anomalies and counterparty flags",
+      },
+      {
+        href: "/suspicious",
+        label: "Suspicious",
+        icon: UserX,
+        description: "Community registry of flagged Binance takers",
       },
     ],
   },

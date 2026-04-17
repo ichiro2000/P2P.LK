@@ -20,7 +20,7 @@ import { PriceDistribution } from "@/components/historical/price-distribution";
 import { RangeTabs } from "@/components/historical/range-tabs";
 import { Empty } from "@/components/common/empty";
 import { Clock } from "lucide-react";
-import { formatCompact, formatFiat, formatPct } from "@/lib/format";
+import { formatCompact, formatFiat, formatPct, formatSLT } from "@/lib/format";
 
 export const metadata = { title: "Historical" };
 export const dynamic = "force-dynamic";
@@ -189,7 +189,7 @@ export default async function HistoricalPage({
 
             <div className="pt-1 text-[11px] text-muted-foreground">
               {snapshots.length} snapshots since{" "}
-              {first ? new Date(first.ts * 1000).toLocaleString() : "—"}
+              {formatSLT(first?.ts)} SLT
             </div>
           </>
         )}

@@ -104,6 +104,21 @@ function ensureSchema(): Promise<void> {
          ON merchant_snapshots (merchant_id, asset, fiat, ts)`,
       `CREATE INDEX IF NOT EXISTS idx_merchant_market
          ON merchant_snapshots (asset, fiat, ts)`,
+      `CREATE TABLE IF NOT EXISTS suspicious_takers (
+        id               SERIAL PRIMARY KEY,
+        ts               BIGINT NOT NULL,
+        binance_user_id  TEXT NOT NULL,
+        profile_url      TEXT NOT NULL,
+        display_name     TEXT,
+        reason           TEXT NOT NULL,
+        notes            TEXT,
+        reporter         TEXT,
+        status           TEXT NOT NULL DEFAULT 'active'
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_suspicious_user
+         ON suspicious_takers (binance_user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_suspicious_ts
+         ON suspicious_takers (ts)`,
     ];
     for (const stmt of statements) {
       await c.unsafe(stmt);

@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatPct } from "@/lib/format";
+import { formatPct, formatSLT } from "@/lib/format";
+import { SLT_OFFSET_SEC } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 /**
@@ -56,8 +57,8 @@ export function UptimeStrip({
   const overallPresent = marketTicks.filter((t) => merchantSet.has(t)).length;
   const uptime = overallTotal > 0 ? overallPresent / overallTotal : 0;
 
-  const firstLabel = new Date(first * 1000).toLocaleString();
-  const lastLabel = new Date(last * 1000).toLocaleString();
+  const firstLabel = formatSLT(first);
+  const lastLabel = formatSLT(last);
 
   return (
     <Card className="card-lift border-border bg-card/60">
@@ -122,11 +123,13 @@ export function HourHeatmap({
   );
 
   for (const t of merchantTicks) {
-    const d = new Date(t * 1000);
+    // Bucket in Asia/Colombo so rows/columns match what SLT users see on
+    // their live clock. See SLT_OFFSET_SEC for background.
+    const d = new Date((t + SLT_OFFSET_SEC) * 1000);
     // Monday-first: 0=Mon … 6=Sun
-    const jsDow = d.getDay();
+    const jsDow = d.getUTCDay();
     const dow = (jsDow + 6) % 7;
-    const hour = d.getHours();
+    const hour = d.getUTCHours();
     grid[dow][hour].count += 1;
   }
 
@@ -159,7 +162,7 @@ export function HourHeatmap({
           When they&apos;re usually online
         </CardTitle>
         <span className="font-mono text-[10px] text-muted-foreground">
-          local time · darker = more ticks
+          SLT · darker = more ticks
         </span>
       </CardHeader>
       <CardContent>

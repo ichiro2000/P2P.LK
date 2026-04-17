@@ -76,7 +76,37 @@ export const merchantSnapshots = pgTable(
   ],
 );
 
+/**
+ * Community-maintained registry of Binance P2P takers flagged as suspicious
+ * (scams, chargebacks, 4th-party settlement, etc). Each row is one report —
+ * the same `binanceUserId` can be flagged multiple times with different
+ * reasons, so the merchant community builds an evidence trail over time.
+ *
+ * `binanceUserId` is the `advertiserNo` parsed out of the QR profile URL —
+ * it's the stable, canonical identifier across QR images and share links.
+ */
+export const suspiciousTakers = pgTable(
+  "suspicious_takers",
+  {
+    id: serial("id").primaryKey(),
+    ts: bigint("ts", { mode: "number" }).notNull(),
+    binanceUserId: text("binance_user_id").notNull(),
+    profileUrl: text("profile_url").notNull(),
+    displayName: text("display_name"),
+    reason: text("reason").notNull(),
+    notes: text("notes"),
+    reporter: text("reporter"),
+    status: text("status").notNull().default("active"),
+  },
+  (t) => [
+    index("idx_suspicious_user").on(t.binanceUserId),
+    index("idx_suspicious_ts").on(t.ts),
+  ],
+);
+
 export type MarketSnapshotRow = typeof marketSnapshots.$inferSelect;
 export type MarketSnapshotInsert = typeof marketSnapshots.$inferInsert;
 export type MerchantSnapshotRow = typeof merchantSnapshots.$inferSelect;
 export type MerchantSnapshotInsert = typeof merchantSnapshots.$inferInsert;
+export type SuspiciousTakerRow = typeof suspiciousTakers.$inferSelect;
+export type SuspiciousTakerInsert = typeof suspiciousTakers.$inferInsert;

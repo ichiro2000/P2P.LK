@@ -12,7 +12,7 @@ import { Empty } from "@/components/common/empty";
 import { computeRiskReport } from "@/lib/risk";
 import { listTrackedMarkets, RANGES, type RangeKey } from "@/lib/db/queries";
 import { ASSET, FIAT } from "@/lib/constants";
-import { formatFiat } from "@/lib/format";
+import { formatFiat, formatSLT } from "@/lib/format";
 import { ShieldCheck, Clock } from "lucide-react";
 
 export const metadata = { title: "Risk" };
@@ -157,7 +157,7 @@ export default async function RiskPage({ searchParams }: { searchParams: SP }) {
             </Reveal>
 
             <div className="pt-1 text-[11px] text-muted-foreground">
-              Generated {new Date(report.generatedAt).toLocaleTimeString()}{" "}
+              Generated {formatSLT(report.generatedAt, { timeStyle: "short", dateStyle: undefined })} SLT{" "}
               · window {range}
             </div>
           </>

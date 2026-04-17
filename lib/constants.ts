@@ -8,6 +8,16 @@
 export const ASSET = "USDT" as const;
 export type Asset = typeof ASSET;
 
+/**
+ * Sri Lanka Time — used for every server-side date bucketing / label. On the
+ * server, `Date#getHours()` etc. default to the container's tz (UTC in prod),
+ * which would shift every displayed time ~5.5h from what users see on their
+ * clocks. Apply this offset (or use `timeZone: SLT_TZ` with Intl) to render /
+ * bucket in Asia/Colombo. No DST — safe as a fixed integer.
+ */
+export const SLT_TZ = "Asia/Colombo" as const;
+export const SLT_OFFSET_SEC = 5 * 3600 + 30 * 60;
+
 /** Kept as a one-element array so tests that expected an array still pass. */
 export const ASSETS = [ASSET] as const;
 

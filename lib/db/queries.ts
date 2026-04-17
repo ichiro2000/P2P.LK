@@ -4,6 +4,7 @@ import type {
   MarketSnapshotRow,
   MerchantSnapshotRow,
 } from "./schema";
+import { SLT_OFFSET_SEC } from "@/lib/constants";
 
 /** ── Time ranges ─────────────────────────────────────────────────────── */
 
@@ -120,10 +121,8 @@ export async function listTrackedMarkets(range: RangeKey = "24h") {
  *
  * Bucketing in Sri Lanka time (UTC+5:30, no DST) means the heatmap columns
  * match what users see on the live clock — otherwise the server's tz (UTC in
- * prod) would shift every hour column by ~5.5h.
+ * prod) would shift every hour column by ~5.5h. See `SLT_OFFSET_SEC`.
  */
-const SLT_OFFSET_SEC = 5 * 3600 + 30 * 60;
-
 export async function depthHeatmap(
   asset: string,
   fiat: string,

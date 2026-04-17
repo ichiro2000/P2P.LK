@@ -12,6 +12,7 @@ import { mean, stdev } from "@/lib/stats";
 import { fetchBothSides, normalizeAds } from "@/lib/binance";
 import { buildMarket, summarizeMerchants } from "@/lib/analytics";
 import { resolveBankPayTypes } from "@/lib/constants";
+import { formatSLT } from "@/lib/format";
 
 /** ── Shared types ────────────────────────────────────────────────────── */
 
@@ -124,7 +125,7 @@ export async function dailyRecapReport(
     meta: [
       {
         label: "First tick",
-        value: first ? new Date(first.ts * 1000).toLocaleString() : "—",
+        value: formatSLT(first?.ts),
       },
       {
         label: "Latest mid",
