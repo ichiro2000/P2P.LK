@@ -110,7 +110,9 @@ function toneForFraction(f: number, empty: boolean): string {
 /**
  * 7×24 hour-of-day heatmap showing when the merchant is usually online. Good
  * for "best time to catch them" questions — rows are days (Mon → Sun in local
- * time), columns are hours.
+ * time), columns are hours. The input ticks are a wider window (30d) than the
+ * currently-selected range tab so the weekday pattern is readable; otherwise
+ * a 24h range would paint at most one row.
  */
 export function HourHeatmap({
   merchantTicks,
@@ -122,6 +124,13 @@ export function HourHeatmap({
     Array.from({ length: 24 }, () => ({ count: 0 })),
   );
 
+  // How many distinct calendar days (in SLT) actually appear in the series —
+  // used to normalize cell intensity. If a cell has 1 tick but we've only seen
+  // that weekday once, it deserves 100% intensity, not a sliver.
+  const distinctDays = new Set<string>();
+  let firstTs: number | null = null;
+  let lastTs: number | null = null;
+
   for (const t of merchantTicks) {
     // Bucket in Asia/Colombo so rows/columns match what SLT users see on
     // their live clock. See SLT_OFFSET_SEC for background.
@@ -131,6 +140,11 @@ export function HourHeatmap({
     const dow = (jsDow + 6) % 7;
     const hour = d.getUTCHours();
     grid[dow][hour].count += 1;
+    distinctDays.add(
+      `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`,
+    );
+    if (firstTs === null || t < firstTs) firstTs = t;
+    if (lastTs === null || t > lastTs) lastTs = t;
   }
 
   let max = 0;
@@ -146,7 +160,8 @@ export function HourHeatmap({
         </CardHeader>
         <CardContent>
           <div className="text-[11px] text-muted-foreground">
-            No listing history in this range.
+            No listing history yet. Heatmap fills in as we see this merchant
+            across days and hours.
           </div>
         </CardContent>
       </Card>
@@ -154,6 +169,10 @@ export function HourHeatmap({
   }
 
   const rowLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const coverageLabel =
+    firstTs && lastTs
+      ? `${formatSLT(firstTs, { dateStyle: "short" })} → ${formatSLT(lastTs, { dateStyle: "short" })}`
+      : "";
 
   return (
     <Card className="card-lift border-border bg-card/60">
@@ -161,9 +180,16 @@ export function HourHeatmap({
         <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           When they&apos;re usually online
         </CardTitle>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          SLT · darker = more ticks
-        </span>
+        <div className="flex flex-col items-end gap-0.5">
+          <span className="font-mono text-[10px] text-muted-foreground">
+            SLT · darker = more ticks · {distinctDays.size}d covered
+          </span>
+          {coverageLabel && (
+            <span className="font-mono text-[9px] text-muted-foreground/70">
+              {coverageLabel}
+            </span>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col gap-1">

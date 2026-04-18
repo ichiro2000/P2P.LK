@@ -6,13 +6,31 @@ import { buttonVariants } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { QrChecker } from "@/components/suspicious/qr-checker";
 import { RegistryList } from "@/components/suspicious/registry-list";
-import { listSuspicious } from "@/lib/db/suspicious";
+import {
+  bulkActivityForSuspicious,
+  listSuspicious,
+} from "@/lib/db/suspicious";
 
 export const metadata = { title: "Suspicious Takers" };
 export const dynamic = "force-dynamic";
 
 export default async function SuspiciousPage() {
   const reports = await listSuspicious();
+
+  // First-report timestamp per taker — used to compute "orders since flagged".
+  // `listSuspicious` orders newest-first, so the minimum ts per userId gives
+  // us the earliest (first) report for that taker.
+  const firstTsById = new Map<string, number>();
+  for (const r of reports) {
+    const cur = firstTsById.get(r.binanceUserId);
+    if (cur === undefined || r.ts < cur) firstTsById.set(r.binanceUserId, r.ts);
+  }
+  const activity = await bulkActivityForSuspicious(
+    Array.from(firstTsById.entries()).map(([merchantId, firstReportTs]) => ({
+      merchantId,
+      firstReportTs,
+    })),
+  ).catch(() => new Map());
 
   return (
     <>
@@ -37,7 +55,10 @@ export default async function SuspiciousPage() {
         </Reveal>
 
         <Reveal delay={70}>
-          <RegistryList reports={reports} />
+          <RegistryList
+            reports={reports}
+            activity={Object.fromEntries(activity)}
+          />
         </Reveal>
       </div>
     </>

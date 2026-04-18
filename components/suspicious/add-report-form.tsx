@@ -31,6 +31,14 @@ export function AddReportForm() {
   const [decoding, setDecoding] = useState(false);
 
   const [displayName, setDisplayName] = useState("");
+  // `true` while we're looking up the Binance nickname for a freshly-parsed
+  // advertiserNo. UI disables the name field to avoid the user racing the
+  // auto-fill with manual typing.
+  const [displayNameLoading, setDisplayNameLoading] = useState(false);
+  // `true` when the current value of `displayName` came back from the lookup
+  // endpoint — lets us render a "Auto-filled from Binance" hint and avoid
+  // overwriting a value the user typed themselves.
+  const [displayNameAuto, setDisplayNameAuto] = useState(false);
   const [reason, setReason] = useState<string>(REASON_PRESETS[0]);
   const [customReason, setCustomReason] = useState("");
   const [notes, setNotes] = useState("");
@@ -63,11 +71,40 @@ export function AddReportForm() {
         );
       } else {
         setProfile(parsed);
+        // Fire-and-forget: if the taker is a known LKR merchant, pre-fill
+        // the display name from the latest snapshot. We only overwrite an
+        // empty field (or a prior auto-fill) so manual input wins.
+        void tryAutoFillDisplayName(raw);
       }
     } catch (e) {
       setDecodeError(e instanceof Error ? e.message : "QR decode failed.");
     } finally {
       setDecoding(false);
+    }
+  }
+
+  async function tryAutoFillDisplayName(rawDecoded: string) {
+    setDisplayNameLoading(true);
+    try {
+      const r = await fetch(
+        `/api/suspicious/lookup?decoded=${encodeURIComponent(rawDecoded)}`,
+        { cache: "no-store" },
+      );
+      if (!r.ok) return;
+      const json = (await r.json()) as { displayName: string | null };
+      const found = json.displayName?.trim();
+      if (!found) return;
+      setDisplayName((cur) => {
+        // Don't stomp on something the user typed themselves while the
+        // lookup was in flight.
+        if (cur && cur.trim() && !displayNameAuto) return cur;
+        return found;
+      });
+      setDisplayNameAuto(true);
+    } catch {
+      // Silent — manual entry still works.
+    } finally {
+      setDisplayNameLoading(false);
     }
   }
 
@@ -185,13 +222,42 @@ export function AddReportForm() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Display name (optional)">
-              <Input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="e.g. nivedha Kannan"
-                maxLength={120}
-              />
+            <Field label="Display name">
+              <div className="relative">
+                <Input
+                  value={displayName}
+                  onChange={(e) => {
+                    setDisplayName(e.target.value);
+                    setDisplayNameAuto(false);
+                  }}
+                  placeholder={
+                    displayNameLoading
+                      ? "Looking up from Binance…"
+                      : "Auto-filled from QR · edit if wrong"
+                  }
+                  maxLength={120}
+                  disabled={displayNameLoading}
+                />
+                {displayNameLoading && (
+                  <Loader2 className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
+                )}
+              </div>
+              {displayNameAuto && !displayNameLoading && (
+                <p className="mt-1 flex items-center gap-1 text-[10px] text-[color:var(--color-buy)]">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Auto-filled from Binance snapshots · edit if the nickname has
+                  changed.
+                </p>
+              )}
+              {profile &&
+                !displayName &&
+                !displayNameLoading &&
+                !displayNameAuto && (
+                  <p className="mt-1 text-[10px] text-muted-foreground/70">
+                    We haven&apos;t seen this taker on the LKR book yet — enter
+                    their nickname manually.
+                  </p>
+                )}
             </Field>
             <Field label="Reported by (optional)">
               <Input
