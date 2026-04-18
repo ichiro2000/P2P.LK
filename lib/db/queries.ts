@@ -218,6 +218,36 @@ export async function merchantHistory(
 }
 
 /**
+ * Listing ticks (just the `ts` column) for a merchant over a wider, fixed
+ * window — used by the weekday × hour heatmap so the pattern stays meaningful
+ * regardless of which range tab the user has selected. A 24h selection gives
+ * at most one row of activity; the heatmap needs a week of coverage to read
+ * as a pattern. Capped at 30d to match the longest range we store.
+ */
+export async function merchantHeatmapTicks(
+  merchantId: string,
+  asset: string,
+  fiat: string,
+  windowSec: number = RANGES["30d"],
+): Promise<number[]> {
+  const db = await getDb();
+  const since = Math.floor(Date.now() / 1000) - windowSec;
+  const rows = await db
+    .select({ ts: schema.merchantSnapshots.ts })
+    .from(schema.merchantSnapshots)
+    .where(
+      and(
+        eq(schema.merchantSnapshots.merchantId, merchantId),
+        eq(schema.merchantSnapshots.asset, asset),
+        eq(schema.merchantSnapshots.fiat, fiat),
+        gte(schema.merchantSnapshots.ts, since),
+      ),
+    )
+    .orderBy(asc(schema.merchantSnapshots.ts));
+  return rows.map((r) => r.ts);
+}
+
+/**
  * Most recent snapshot row we have for a single merchant in this market.
  * Used by the merchant detail page to populate the header card.
  */

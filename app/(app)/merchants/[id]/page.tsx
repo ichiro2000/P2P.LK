@@ -10,6 +10,7 @@ import {
   latestMarketSnapshot,
   latestMerchantSnapshot,
   listMarketMids,
+  merchantHeatmapTicks,
   merchantHistory,
   RANGES,
   type RangeKey,
@@ -84,12 +85,14 @@ export default async function MerchantDetailPage({
   const symbol = FIAT.symbol;
   const subtitle = `${asset} / ${fiat} · ${FIAT.name}`;
 
-  const [latest, history, marketMids, latestMarket] = await Promise.all([
-    latestMerchantSnapshot(id, asset, fiat).catch(() => undefined),
-    merchantHistory(id, asset, fiat, range).catch(() => []),
-    listMarketMids(asset, fiat, range).catch(() => []),
-    latestMarketSnapshot(asset, fiat).catch(() => undefined),
-  ]);
+  const [latest, history, marketMids, latestMarket, heatmapTicks] =
+    await Promise.all([
+      latestMerchantSnapshot(id, asset, fiat).catch(() => undefined),
+      merchantHistory(id, asset, fiat, range).catch(() => []),
+      listMarketMids(asset, fiat, range).catch(() => []),
+      latestMarketSnapshot(asset, fiat).catch(() => undefined),
+      merchantHeatmapTicks(id, asset, fiat).catch(() => []),
+    ]);
 
   if (!latest) {
     return (
@@ -232,7 +235,7 @@ export default async function MerchantDetailPage({
             </Reveal>
 
             <Reveal delay={190}>
-              <HourHeatmap merchantTicks={merchantTicks} />
+              <HourHeatmap merchantTicks={heatmapTicks} />
             </Reveal>
           </>
         )}
