@@ -11,11 +11,9 @@ import { ASSET, FIAT } from "@/lib/constants";
 import {
   activityForSuspicious,
   reportsForUser,
-  suspiciousHeatmapTicks,
   suspiciousOrderHistory,
   type SuspiciousReport,
 } from "@/lib/db/suspicious";
-import { HourHeatmap } from "@/components/merchant/detail/activity-panels";
 import { OrderTrendChart } from "@/components/suspicious/order-trend-chart";
 import { formatCompact, formatPct, formatRelative, formatSLT } from "@/lib/format";
 import {
@@ -55,9 +53,8 @@ export default async function SuspiciousDetailPage({
   // last is earliest. We need the earliest for "orders since flagged" math.
   const firstReportTs = reports[reports.length - 1].ts;
 
-  const [activity, heatmapTicks, orderHistory, binanceLive] = await Promise.all([
+  const [activity, orderHistory, binanceLive] = await Promise.all([
     activityForSuspicious(id, firstReportTs).catch(() => null),
-    suspiciousHeatmapTicks(id).catch(() => []),
     suspiciousOrderHistory(id).catch(() => []),
     // Live Binance fetch — public endpoint, no auth. Gives us verifications,
     // join date, and all-time trade count that we don't store locally.
@@ -145,17 +142,12 @@ export default async function SuspiciousDetailPage({
           />
         </Reveal>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Reveal delay={80}>
-            <OrderTrendChart
-              points={orderHistory}
-              firstReportTs={firstReportTs}
-            />
-          </Reveal>
-          <Reveal delay={110}>
-            <HourHeatmap merchantTicks={heatmapTicks} />
-          </Reveal>
-        </div>
+        <Reveal delay={80}>
+          <OrderTrendChart
+            points={orderHistory}
+            firstReportTs={firstReportTs}
+          />
+        </Reveal>
 
         <Reveal delay={140}>
           <ReportsList reports={reports} />
