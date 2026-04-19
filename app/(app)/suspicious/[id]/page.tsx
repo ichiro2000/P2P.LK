@@ -190,6 +190,25 @@ function HeaderCard({
   ticksSinceReport: number;
   binance: BinanceAdvertiserPublic | null;
 }) {
+  // Derive account age in whole days from Binance's registerTime (ms).
+  // Fresh accounts are the single strongest scam signal — we flash the
+  // stat red under 30 days, amber under 90.
+  const accountAgeDays =
+    binance?.registerTime != null
+      ? Math.max(
+          0,
+          Math.floor((Date.now() - binance.registerTime) / 86_400_000),
+        )
+      : null;
+  const accountAgeTone: "red" | "amber" | "muted" =
+    accountAgeDays == null
+      ? "muted"
+      : accountAgeDays < 30
+        ? "red"
+        : accountAgeDays < 90
+          ? "amber"
+          : "muted";
+
   return (
     <Card className="border-border bg-card/60">
       <CardContent className="flex flex-col gap-5 p-5">
@@ -272,7 +291,31 @@ function HeaderCard({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-3 lg:grid-cols-7">
+          <Stat
+            label="Account age"
+            value={
+              <span
+                className={cn(
+                  accountAgeTone === "red" &&
+                    "text-[color:var(--color-sell)]",
+                  accountAgeTone === "amber" &&
+                    "text-[color:var(--color-warn)]",
+                )}
+              >
+                {accountAgeDays != null ? formatAgeDays(accountAgeDays) : "—"}
+              </span>
+            }
+            footnote={
+              accountAgeTone === "red"
+                ? "under 30 days — fresh account"
+                : accountAgeTone === "amber"
+                  ? "under 90 days — still new"
+                  : accountAgeDays != null
+                    ? "days since registration"
+                    : "needs Binance profile"
+            }
+          />
           <Stat
             label="All trades"
             value={
@@ -313,7 +356,7 @@ function HeaderCard({
             footnote={
               binance?.monthFinishRate != null
                 ? binance.monthFinishRate < 0.9
-                  ? "below 90% — high appeal rate"
+                  ? "below 90% — high cancellation rate"
                   : "live from Binance"
                 : "needs Binance profile"
             }
@@ -495,4 +538,16 @@ function formatDurationShort(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.round(sec % 60);
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+/** Humanize account age in days: "14d", "45d", "8mo", "1y 3mo". Keeps the
+ *  unit tight so it fits the stat card value slot without wrapping. */
+function formatAgeDays(days: number): string {
+  if (!Number.isFinite(days) || days < 0) return "—";
+  if (days < 60) return `${days}d`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo`;
+  const years = Math.floor(months / 12);
+  const remMonths = months % 12;
+  return remMonths > 0 ? `${years}y ${remMonths}mo` : `${years}y`;
 }
