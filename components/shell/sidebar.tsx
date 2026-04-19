@@ -45,7 +45,7 @@ export function Sidebar({ className }: { className?: string }) {
             <span className="text-muted-foreground">Live · Binance P2P</span>
           </div>
           <div className="mt-1 text-[10px] leading-snug text-muted-foreground/70">
-            Data refreshed every 20 seconds. Unofficial public feed.
+            Data refreshed every 20 seconds.
           </div>
         </div>
       </div>
