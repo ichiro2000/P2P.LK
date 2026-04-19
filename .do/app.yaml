@@ -67,6 +67,14 @@ envs:
   - key: NODE_ENV
     scope: RUN_TIME
     value: production
+  # Pinning the Playwright browser cache to an absolute path so Playwright
+  # finds the Chromium the base image pre-installed at /ms-playwright/.
+  # DO App Platform overrides the container cwd to /workspace and ignores
+  # some Dockerfile `ENV` values, so setting this at the spec level is
+  # the only way to guarantee the resolver's browser launch succeeds.
+  - key: PLAYWRIGHT_BROWSERS_PATH
+    scope: RUN_AND_BUILD_TIME
+    value: /ms-playwright
 
 services:
   # Web is built from /Dockerfile — we need Debian's chromium in the image
