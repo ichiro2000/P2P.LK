@@ -17,6 +17,7 @@ import path from "node:path";
 loadEnv({ path: path.resolve(process.cwd(), ".env.local"), override: false });
 
 import { runIngest, type IngestMarket } from "../lib/ingest";
+import { runTakerPoll } from "../lib/ingest-takers";
 
 function parseArgs(argv: string[]) {
   const markets: IngestMarket[] = [];
@@ -47,6 +48,32 @@ async function once(markets?: IngestMarket[]) {
   );
   if (errors.length) {
     for (const e of errors) console.error(`  ✗ ${e.market}: ${e.error}`);
+  }
+
+  // Second phase — poll every flagged taker's Binance profile. Isolated
+  // from the market ingest above so a failure here doesn't mark the
+  // whole tick as bad. Rows land in merchant_snapshots so the suspicious
+  // detail page's "still trading?" deltas fill in automatically.
+  try {
+    const takerReport = await runTakerPoll();
+    if (takerReport.takersAttempted > 0) {
+      const errStr2 = takerReport.errors.length
+        ? ` errors=${takerReport.errors.length}`
+        : "";
+      console.log(
+        `[${stamp}] takers ok — profiled=${takerReport.takersSucceeded}/${takerReport.takersAttempted} rows=${takerReport.takerRowsInserted} in ${takerReport.durationMs}ms${errStr2}`,
+      );
+      if (takerReport.errors.length) {
+        for (const e of takerReport.errors.slice(0, 5)) {
+          console.error(`  ✗ taker ${e.takerId}: ${e.error}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error(
+      `[${stamp}] taker poll failed:`,
+      err instanceof Error ? err.message : err,
+    );
   }
 }
 
