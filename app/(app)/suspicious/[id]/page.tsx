@@ -17,7 +17,7 @@ import {
 } from "@/lib/db/suspicious";
 import { HourHeatmap } from "@/components/merchant/detail/activity-panels";
 import { OrderTrendChart } from "@/components/suspicious/order-trend-chart";
-import { formatCompact, formatRelative, formatSLT } from "@/lib/format";
+import { formatCompact, formatPct, formatRelative, formatSLT } from "@/lib/format";
 import {
   AlertTriangle,
   ExternalLink,
@@ -25,6 +25,10 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  fetchBinanceAdvertiserPublic,
+  type BinanceAdvertiserPublic,
+} from "@/lib/qr-resolve";
 
 export const metadata = { title: "Suspicious taker · detail" };
 export const dynamic = "force-dynamic";
@@ -50,15 +54,21 @@ export default async function SuspiciousDetailPage({
   // last is earliest. We need the earliest for "orders since flagged" math.
   const firstReportTs = reports[reports.length - 1].ts;
 
-  const [activity, heatmapTicks, orderHistory] = await Promise.all([
+  const [activity, heatmapTicks, orderHistory, binanceLive] = await Promise.all([
     activityForSuspicious(id, firstReportTs).catch(() => null),
     suspiciousHeatmapTicks(id).catch(() => []),
     suspiciousOrderHistory(id).catch(() => []),
+    // Live Binance fetch — public endpoint, no auth. Gives us verifications,
+    // join date, and all-time trade count that we don't store locally.
+    fetchBinanceAdvertiserPublic(id).catch(() => null),
   ]);
 
   const head = reports[0];
   const displayName =
-    activity?.merchantName ?? head.displayName ?? "Unknown taker";
+    activity?.merchantName ??
+    binanceLive?.nickName ??
+    head.displayName ??
+    "Unknown taker";
   const isActive = activity?.isActive ?? false;
   const ordersDelta = activity?.ordersDelta ?? null;
   const stillTrading = ordersDelta != null && ordersDelta > 0;
@@ -130,6 +140,7 @@ export default async function SuspiciousDetailPage({
             ordersAtReport={activity?.ordersAtReport ?? null}
             ordersDelta={ordersDelta}
             ticksSinceReport={activity?.ticksSinceReport ?? 0}
+            binance={binanceLive}
           />
         </Reveal>
 
@@ -173,6 +184,7 @@ function HeaderCard({
   ordersAtReport,
   ordersDelta,
   ticksSinceReport,
+  binance,
 }: {
   userId: string;
   displayName: string;
@@ -183,6 +195,7 @@ function HeaderCard({
   ordersAtReport: number | null;
   ordersDelta: number | null;
   ticksSinceReport: number;
+  binance: BinanceAdvertiserPublic | null;
 }) {
   return (
     <Card className="border-border bg-card/60">
@@ -242,6 +255,14 @@ function HeaderCard({
                       : `Last seen ${formatRelative(new Date(lastSeenTs * 1000))}`
                     : "Never seen on LKR book"}
                 </span>
+                {binance?.userIdentity && (
+                  <>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span className="font-mono text-muted-foreground/70">
+                      {binance.userIdentity.toLowerCase().replace(/_/g, " ")}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -258,11 +279,23 @@ function HeaderCard({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-3 lg:grid-cols-5">
           <Stat
             label="Orders 30d (latest)"
-            value={ordersLatest != null ? formatCompact(ordersLatest) : "—"}
-            footnote="rolling 30d from Binance"
+            value={
+              ordersLatest != null
+                ? formatCompact(ordersLatest)
+                : binance?.monthOrderCount != null
+                  ? formatCompact(binance.monthOrderCount)
+                  : "—"
+            }
+            footnote={
+              ordersLatest != null
+                ? "rolling 30d · from our snapshots"
+                : binance?.monthOrderCount != null
+                  ? "rolling 30d · live from Binance"
+                  : "rolling 30d"
+            }
           />
           <Stat
             label="Orders at first report"
@@ -297,12 +330,27 @@ function HeaderCard({
             }
           />
           <Stat
+            label="30d completion rate"
+            value={
+              binance?.monthFinishRate != null
+                ? formatPct(binance.monthFinishRate, { frac: 1 })
+                : "—"
+            }
+            footnote={
+              binance?.monthFinishRate != null
+                ? binance.monthFinishRate < 0.9
+                  ? "below 90% — high appeal rate"
+                  : "live from Binance"
+                : "needs Binance profile"
+            }
+          />
+          <Stat
             label="Ticks since flag"
             value={formatCompact(ticksSinceReport)}
             footnote={
               ticksSinceReport > 0
-                ? "listing snapshots since first report"
-                : "hasn't relisted since being flagged"
+                ? "LKR listing ticks after first report"
+                : "hasn't relisted on LKR since flag"
             }
           />
         </div>
@@ -310,6 +358,7 @@ function HeaderCard({
     </Card>
   );
 }
+
 
 function ReportsList({ reports }: { reports: SuspiciousReport[] }) {
   if (reports.length === 0) {

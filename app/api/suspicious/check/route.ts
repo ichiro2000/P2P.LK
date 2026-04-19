@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { reportsForUser } from "@/lib/db/suspicious";
-import { parseBinanceProfile } from "@/lib/qr";
+import { resolveBinanceProfile } from "@/lib/qr-resolve";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,7 +22,10 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const ref = parseBinanceProfile(decoded);
+  // Resolve so short-link QR codes match reports stored under the real
+  // advertiserNo; otherwise the registry would read "not flagged" for any QR
+  // uploaded via a redirect URL.
+  const ref = await resolveBinanceProfile(decoded);
   if (!ref) {
     return NextResponse.json(
       {
