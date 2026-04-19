@@ -223,15 +223,26 @@ export async function fetchBinanceAdvertiserPublic(
   opts?: {
     timeoutMs?: number;
     fiats?: readonly string[];
-    /** Disable the Chromium fallback (used from the lookup endpoint when
-     *  we want a fast-only path — the detail page still opts in). */
+    /** Kept for backwards compatibility — the primary path no longer
+     *  launches a browser, so this flag is essentially a no-op now. */
     skipBrowser?: boolean;
   },
 ): Promise<BinanceAdvertiserPublic | null> {
   if (!/^[sS]?[A-Za-z0-9]{10,}$/.test(advertiserNo)) return null;
   const timeoutMs = opts?.timeoutMs ?? 4000;
-  const fiats = opts?.fiats ?? PROBE_FIATS;
 
+  // Primary path: hit `profile-and-ads-list` directly. This is the same
+  // endpoint the Binance advertiserDetail HTML page calls on first paint;
+  // it returns for ANY user (including zero-ad takers) and doesn't need
+  // a browser to solve a WAF challenge.
+  const direct = await fetchProfileDirect(advertiserNo, timeoutMs);
+  if (direct?.nickName) return direct;
+
+  // Safety net: if Binance ever rotates the profile-and-ads-list endpoint,
+  // fall back to scanning `adv/search` for any active ad whose advertiser
+  // matches. This only resolves merchants with active ads, but keeps the
+  // display-name auto-fill working while we patch.
+  const fiats = opts?.fiats ?? PROBE_FIATS;
   for (const fiat of fiats) {
     for (const tradeType of ["BUY", "SELL"] as const) {
       const hit = await probeAdvSearch(advertiserNo, fiat, tradeType, timeoutMs);
@@ -239,37 +250,96 @@ export async function fetchBinanceAdvertiserPublic(
     }
   }
 
-  // `adv/search` doesn't surface the account at all if it has no active
-  // ads anywhere. Dynamic-import into the Chromium scraper for a
-  // last-ditch fetch against the public profile page. Callers can skip
-  // this (and keep the response fast) via `skipBrowser: true`.
-  if (opts?.skipBrowser) return null;
+  void opts?.skipBrowser;
+  return null;
+}
+
+/** One round-trip to the public profile endpoint. Returns the advertiser's
+ *  nickname + full stats + verification flags, same shape as what the
+ *  advertiserDetail page renders. */
+async function fetchProfileDirect(
+  advertiserNo: string,
+  timeoutMs: number,
+): Promise<BinanceAdvertiserPublic | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const { fetchBinanceProfileViaBrowser } = await import(
-      "@/lib/qr-resolve-browser"
+    const res = await fetch(
+      `https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/user/profile-and-ads-list?userNo=${encodeURIComponent(advertiserNo)}`,
+      {
+        method: "GET",
+        signal: ctrl.signal,
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+          "User-Agent": BROWSER_UA,
+          clienttype: "web",
+        },
+      },
     );
-    const profile = await fetchBinanceProfileViaBrowser(advertiserNo);
-    if (!profile || !profile.nickName) return null;
-    return {
-      nickName: profile.nickName,
-      userIdentity: profile.userIdentity,
-      monthOrderCount: profile.monthOrderCount,
-      monthFinishRate: profile.monthFinishRate,
-      userGrade: profile.userGrade,
-      vipLevel: profile.vipLevel,
-      allTradeCount: profile.allTradeCount,
-      avgReleaseTimeSec: profile.avgReleaseTimeSec,
-      avgPayTimeSec: profile.avgPayTimeSec,
-      registerTime: profile.registerTime,
-      emailVerified: profile.emailVerified,
-      mobileVerified: profile.mobileVerified,
-      kycVerified: profile.kycVerified,
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      data?: {
+        userDetailVo?: {
+          userNo?: string;
+          nickName?: string;
+          userIdentity?: string | null;
+          userGrade?: number | null;
+          vipLevel?: number | null;
+          orderCount?: number | string | null;
+          monthOrderCount?: number | string | null;
+          monthFinishRate?: number | string | null;
+          emailVerified?: boolean | null;
+          /** Binance uses `bindMobile` in this payload, not `mobileVerified`. */
+          bindMobile?: boolean | null;
+          kycVerified?: boolean | null;
+          /** Always null in this endpoint — join date has to be derived
+           *  from `userStatsRet.registerDays`. */
+          registrationTime?: number | string | null;
+          userStatsRet?: {
+            registerDays?: number | null;
+            avgReleaseTimeOfLatest30day?: number | null;
+            avgPayTimeOfLatest30day?: number | null;
+          } | null;
+        } | null;
+      } | null;
     };
-  } catch (err) {
-    console.error(
-      `[qr-resolve] browser profile fetch failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    const u = json?.data?.userDetailVo;
+    if (!u?.nickName) return null;
+    const toNum = (v: number | string | null | undefined): number | null =>
+      v == null || v === "" ? null : Number(v);
+    const toBool = (v: boolean | null | undefined): boolean | null =>
+      typeof v === "boolean" ? v : null;
+
+    // `registrationTime` isn't set on this payload. Derive an approximate
+    // join timestamp from `userStatsRet.registerDays` so the detail page
+    // can show "Joined <date>" — matches the Binance UI label within ±1
+    // day of the displayed date.
+    const registerDays = toNum(u.userStatsRet?.registerDays);
+    const registerTime =
+      registerDays != null
+        ? Date.now() - registerDays * 24 * 60 * 60 * 1000
+        : null;
+
+    return {
+      nickName: u.nickName,
+      userIdentity: u.userIdentity ?? null,
+      userGrade: toNum(u.userGrade),
+      vipLevel: toNum(u.vipLevel),
+      allTradeCount: toNum(u.orderCount),
+      monthOrderCount: toNum(u.monthOrderCount),
+      monthFinishRate: toNum(u.monthFinishRate),
+      avgReleaseTimeSec: toNum(u.userStatsRet?.avgReleaseTimeOfLatest30day),
+      avgPayTimeSec: toNum(u.userStatsRet?.avgPayTimeOfLatest30day),
+      registerTime,
+      emailVerified: toBool(u.emailVerified),
+      mobileVerified: toBool(u.bindMobile),
+      kycVerified: toBool(u.kycVerified),
+    };
+  } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
