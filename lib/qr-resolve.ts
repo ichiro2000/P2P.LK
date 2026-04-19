@@ -88,11 +88,15 @@ export async function resolveBinanceShortLink(
       res.status === 202 &&
       res.headers.get("x-amzn-waf-action") === "challenge"
     ) {
+      console.log(`[qr-resolve] WAF challenge detected for ${url}`);
       wafChallenged = true;
     } else if (finalParsed && isBinanceHost(finalParsed.hostname)) {
       return finalUrl;
     }
-  } catch {
+  } catch (err) {
+    console.log(
+      `[qr-resolve] fetch error for ${url}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     // Fall through to the browser fallback.
   } finally {
     clearTimeout(timer);
@@ -101,6 +105,9 @@ export async function resolveBinanceShortLink(
   // WAF path — dynamic import so the Playwright code never lands in a
   // bundle it shouldn't (and local dev without Chromium just skips it).
   if (wafChallenged || /\/qr\//.test(url)) {
+    console.log(
+      `[qr-resolve] escalating to browser (waf=${wafChallenged}) for ${url}`,
+    );
     try {
       const { resolveShortLinkViaBrowser } = await import(
         "@/lib/qr-resolve-browser"
@@ -112,7 +119,10 @@ export async function resolveBinanceShortLink(
       if (browserParsed && isBinanceHost(browserParsed.hostname)) {
         return browserUrl;
       }
-    } catch {
+    } catch (err) {
+      console.error(
+        `[qr-resolve] browser resolver import/call failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       // Browser not available (local dev, image mis-built) — fall back
       // to whatever the sync parser produced.
     }

@@ -21,7 +21,7 @@
  * in local dev when Chromium isn't installed).
  */
 
-import { chromium, type Browser } from "playwright-core";
+import { chromium, type Browser } from "playwright";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -34,9 +34,16 @@ function isEnabled(): boolean {
 
 async function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
+    // `executablePath: undefined` → Playwright uses its own bundled
+    // Chromium (the base image at mcr.microsoft.com/playwright ships it
+    // at /ms-playwright/...). Can still be overridden in dev via env.
+    const execPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
+    console.log(
+      `[qr-resolve-browser] launching chromium (exec=${execPath ?? "<bundled>"})`,
+    );
     browserPromise = chromium
       .launch({
-        executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
+        executablePath: execPath,
         headless: true,
         args: [
           "--no-sandbox",
@@ -54,7 +61,14 @@ async function getBrowser(): Promise<Browser> {
           "--mute-audio",
         ],
       })
+      .then((b) => {
+        console.log("[qr-resolve-browser] chromium launched");
+        return b;
+      })
       .catch((err) => {
+        console.error(
+          `[qr-resolve-browser] chromium launch failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
         // Don't cache the rejection — the next call should retry. This
         // matters on cold deploys where Chromium may briefly be missing
         // before the image is fully ready.
@@ -95,10 +109,17 @@ export async function resolveShortLinkViaBrowser(
   url: string,
   opts?: { timeoutMs?: number },
 ): Promise<string | null> {
-  if (!isEnabled()) return null;
+  if (!isEnabled()) {
+    console.log("[qr-resolve-browser] disabled via env, skipping");
+    return null;
+  }
   const timeout = opts?.timeoutMs ?? 15000;
   const cached = cacheGet(url);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[qr-resolve-browser] cache hit for ${url}`);
+    return cached;
+  }
+  console.log(`[qr-resolve-browser] resolving ${url}`);
 
   let browser: Browser;
   try {
@@ -149,10 +170,16 @@ export async function resolveShortLinkViaBrowser(
         // the caller decide.
       });
     const finalUrl = page.url();
+    console.log(
+      `[qr-resolve-browser] landed on ${finalUrl} (from ${url})`,
+    );
     if (!finalUrl || finalUrl === url) return null;
     cacheSet(url, finalUrl);
     return finalUrl;
-  } catch {
+  } catch (err) {
+    console.error(
+      `[qr-resolve-browser] resolve failed for ${url}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return null;
   } finally {
     // Always close the page + context. Leaking contexts is the fastest
