@@ -15,7 +15,7 @@ import {
   type SuspiciousReport,
 } from "@/lib/db/suspicious";
 import { OrderTrendChart } from "@/components/suspicious/order-trend-chart";
-import { formatCompact, formatPct, formatRelative, formatSLT } from "@/lib/format";
+import { formatCompact, formatPct, formatSLT } from "@/lib/format";
 import {
   AlertTriangle,
   Check,
@@ -132,7 +132,6 @@ export default async function SuspiciousDetailPage({
             userId={id}
             displayName={displayName}
             isActive={isActive}
-            lastSeenTs={activity?.lastSeenTs ?? null}
             reportsCount={reports.length}
             ordersLatest={activity?.ordersLatest ?? null}
             ordersAtReport={activity?.ordersAtReport ?? null}
@@ -171,7 +170,6 @@ function HeaderCard({
   userId,
   displayName,
   isActive,
-  lastSeenTs,
   reportsCount,
   ordersLatest,
   ordersAtReport,
@@ -182,7 +180,6 @@ function HeaderCard({
   userId: string;
   displayName: string;
   isActive: boolean;
-  lastSeenTs: number | null;
   reportsCount: number;
   ordersLatest: number | null;
   ordersAtReport: number | null;
@@ -239,16 +236,6 @@ function HeaderCard({
                 >
                   {reportsCount} report{reportsCount === 1 ? "" : "s"}
                 </Badge>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider",
-                    isActive
-                      ? "bg-[color:var(--color-sell-muted)] text-[color:var(--color-sell)]"
-                      : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {isActive ? "Active" : "Offline"}
-                </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
                 <span className="font-mono">{ASSET}/{FIAT.code}</span>
@@ -258,14 +245,6 @@ function HeaderCard({
                   title={userId}
                 >
                   {userId}
-                </span>
-                <span className="text-muted-foreground/40">·</span>
-                <span>
-                  {lastSeenTs
-                    ? isActive
-                      ? "Live on book"
-                      : `Last seen ${formatRelative(new Date(lastSeenTs * 1000))}`
-                    : "Never seen on LKR book"}
                 </span>
                 {binance?.userIdentity && (
                   <>
