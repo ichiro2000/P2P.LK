@@ -127,6 +127,20 @@ function ensureSchema(): Promise<void> {
          ON suspicious_takers (binance_user_id)`,
       `CREATE INDEX IF NOT EXISTS idx_suspicious_ts
          ON suspicious_takers (ts)`,
+      `CREATE TABLE IF NOT EXISTS suspicious_removal_requests (
+        id                SERIAL PRIMARY KEY,
+        ts                BIGINT NOT NULL,
+        binance_user_id   TEXT NOT NULL,
+        reason            TEXT NOT NULL,
+        reporter_contact  TEXT,
+        status            TEXT NOT NULL DEFAULT 'pending',
+        reviewed_ts       BIGINT,
+        review_note       TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_removal_user
+         ON suspicious_removal_requests (binance_user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_removal_status_ts
+         ON suspicious_removal_requests (status, ts)`,
     ];
     for (const stmt of statements) {
       await c.unsafe(stmt);

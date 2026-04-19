@@ -112,9 +112,43 @@ export const suspiciousTakers = pgTable(
   ],
 );
 
+/**
+ * Requests from the public to un-flag a taker. Anyone can file one (no admin
+ * token), an admin reviews and either approves or rejects. Approval flips all
+ * of that taker's active rows in `suspicious_takers` to `status = 'retracted'`,
+ * which drops them out of the registry and the per-user report list in one
+ * shot — the existing queries already filter on `status = 'active'`.
+ *
+ * We keep the row (and the review note / reviewer timestamp) rather than
+ * hard-deleting so the audit trail survives and a mistaken approval can be
+ * reversed later.
+ */
+export const suspiciousRemovalRequests = pgTable(
+  "suspicious_removal_requests",
+  {
+    id: serial("id").primaryKey(),
+    ts: bigint("ts", { mode: "number" }).notNull(),
+    binanceUserId: text("binance_user_id").notNull(),
+    reason: text("reason").notNull(),
+    reporterContact: text("reporter_contact"),
+    /** `pending` | `approved` | `rejected`. */
+    status: text("status").notNull().default("pending"),
+    reviewedTs: bigint("reviewed_ts", { mode: "number" }),
+    reviewNote: text("review_note"),
+  },
+  (t) => [
+    index("idx_removal_user").on(t.binanceUserId),
+    index("idx_removal_status_ts").on(t.status, t.ts),
+  ],
+);
+
 export type MarketSnapshotRow = typeof marketSnapshots.$inferSelect;
 export type MarketSnapshotInsert = typeof marketSnapshots.$inferInsert;
 export type MerchantSnapshotRow = typeof merchantSnapshots.$inferSelect;
 export type MerchantSnapshotInsert = typeof merchantSnapshots.$inferInsert;
 export type SuspiciousTakerRow = typeof suspiciousTakers.$inferSelect;
 export type SuspiciousTakerInsert = typeof suspiciousTakers.$inferInsert;
+export type SuspiciousRemovalRequestRow =
+  typeof suspiciousRemovalRequests.$inferSelect;
+export type SuspiciousRemovalRequestInsert =
+  typeof suspiciousRemovalRequests.$inferInsert;
