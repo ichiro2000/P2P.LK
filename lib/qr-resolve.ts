@@ -42,8 +42,17 @@ function looksLikeAdvertiserNo(v: string): boolean {
 
 /**
  * Follow redirects on a Binance-domain URL to land on the real profile page,
- * then return the final URL. Returns `null` when the URL is off-domain, the
- * fetch fails, or the host we end up on is no longer Binance.
+ * then return the final URL.
+ *
+ * Two paths, tried in order:
+ *   1. Plain `fetch` with `redirect: "follow"` — fast (~200 ms) and works
+ *      for redirect endpoints Binance doesn't gate.
+ *   2. Headless Chromium via `playwright-core` — handles AWS WAF's JS
+ *      challenge that protects `www.binance.com/qr/*`. Slower
+ *      (~2–4 s) and more memory-hungry, so we only engage it when the
+ *      plain fetch came back with a WAF-shaped response.
+ *
+ * Returns `null` when both paths fail or the URL isn't Binance-hosted.
  */
 export async function resolveBinanceShortLink(
   url: string,
@@ -54,6 +63,7 @@ export async function resolveBinanceShortLink(
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts?.timeoutMs ?? 5000);
+  let wafChallenged = false;
   try {
     // GET + redirect: "follow" is the default. We use GET rather than HEAD
     // because Binance's short-link endpoint returns 405 on HEAD. The body is
@@ -72,13 +82,42 @@ export async function resolveBinanceShortLink(
     });
     const finalUrl = res.url;
     const finalParsed = safeParseUrl(finalUrl);
-    if (!finalParsed || !isBinanceHost(finalParsed.hostname)) return null;
-    return finalUrl;
+    // AWS WAF returns 202 with the same URL + a JS-challenge body. That's
+    // the signal to escalate to the headless browser.
+    if (
+      res.status === 202 &&
+      res.headers.get("x-amzn-waf-action") === "challenge"
+    ) {
+      wafChallenged = true;
+    } else if (finalParsed && isBinanceHost(finalParsed.hostname)) {
+      return finalUrl;
+    }
   } catch {
-    return null;
+    // Fall through to the browser fallback.
   } finally {
     clearTimeout(timer);
   }
+
+  // WAF path — dynamic import so the Playwright code never lands in a
+  // bundle it shouldn't (and local dev without Chromium just skips it).
+  if (wafChallenged || /\/qr\//.test(url)) {
+    try {
+      const { resolveShortLinkViaBrowser } = await import(
+        "@/lib/qr-resolve-browser"
+      );
+      const browserUrl = await resolveShortLinkViaBrowser(url, {
+        timeoutMs: 15000,
+      });
+      const browserParsed = browserUrl ? safeParseUrl(browserUrl) : null;
+      if (browserParsed && isBinanceHost(browserParsed.hostname)) {
+        return browserUrl;
+      }
+    } catch {
+      // Browser not available (local dev, image mis-built) — fall back
+      // to whatever the sync parser produced.
+    }
+  }
+  return null;
 }
 
 /**
