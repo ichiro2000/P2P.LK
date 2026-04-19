@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ const TOKEN_KEY = "p2plk_admin_token";
 
 export function AddReportForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [decoded, setDecoded] = useState<string>("");
   const [profile, setProfile] = useState<BinanceProfileRef | null>(null);
@@ -68,6 +69,24 @@ export function AddReportForm() {
   const isShortLink =
     profile != null &&
     !/^[sS]?[A-Za-z0-9]{16,}$/.test(profile.userId);
+
+  // When the user arrives via the QR checker's "Flag this taker" button,
+  // the decoded QR content lands in the `?decoded=…` search param. Treat
+  // that like a fresh QR upload — sync-parse for an immediate preview,
+  // then kick off the server lookup to resolve short-links and auto-fill
+  // the nickname. Runs once per distinct value so edits don't loop.
+  useEffect(() => {
+    const seeded = searchParams.get("decoded");
+    if (!seeded) return;
+    if (seeded === decoded) return;
+    setDecoded(seeded);
+    const parsed = parseBinanceProfile(seeded);
+    if (parsed) setProfile(parsed);
+    void runServerLookup(seeded);
+    // `runServerLookup` is stable (closes over state setters only) — pulling
+    // it into the dep array would retrigger the effect on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function handleFile(file: File) {
     setDecoding(true);

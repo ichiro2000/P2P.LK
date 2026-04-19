@@ -1,12 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { decodeQrFromFile } from "@/lib/qr-decode-client";
 import { formatSLT } from "@/lib/format";
-import { AlertTriangle, CheckCircle2, Upload, Loader2, ExternalLink } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Flag,
+  Upload,
+  Loader2,
+  ExternalLink,
+} from "lucide-react";
 import type { SuspiciousReport } from "@/lib/db/suspicious";
 import type { BinanceProfileRef } from "@/lib/qr";
 
@@ -14,8 +22,13 @@ type Result =
   | { kind: "idle" }
   | { kind: "decoding" }
   | { kind: "checking"; decoded: string }
-  | { kind: "clean"; profile: BinanceProfileRef }
-  | { kind: "flagged"; profile: BinanceProfileRef; reports: SuspiciousReport[] }
+  | { kind: "clean"; profile: BinanceProfileRef; decoded: string }
+  | {
+      kind: "flagged";
+      profile: BinanceProfileRef;
+      reports: SuspiciousReport[];
+      decoded: string;
+    }
   | { kind: "error"; message: string; decoded?: string };
 
 export function QrChecker() {
@@ -50,9 +63,14 @@ export function QrChecker() {
         return;
       }
       if (json.flagged) {
-        setResult({ kind: "flagged", profile: json.profile, reports: json.reports });
+        setResult({
+          kind: "flagged",
+          profile: json.profile,
+          reports: json.reports,
+          decoded,
+        });
       } else {
-        setResult({ kind: "clean", profile: json.profile });
+        setResult({ kind: "clean", profile: json.profile, decoded });
       }
     } catch (e) {
       setResult({
@@ -183,19 +201,33 @@ function ResultView({
 
   if (result.kind === "clean") {
     return (
-      <div className="space-y-2 rounded-md border border-[color:var(--color-buy)]/40 bg-[color:var(--color-buy-muted)] px-3 py-3 text-sm">
+      <div className="space-y-3 rounded-md border border-[color:var(--color-buy)]/40 bg-[color:var(--color-buy-muted)] px-3 py-3 text-sm">
         <div className="flex items-center gap-2 text-[color:var(--color-buy)]">
           <CheckCircle2 className="h-4 w-4" />
           <span className="font-semibold">Not in our registry</span>
         </div>
         <p className="text-xs text-muted-foreground">
           No reports found for this taker. Absence isn&apos;t a guarantee —
-          still do your usual checks.
+          still do your usual checks, and if you&apos;ve had a bad
+          experience with them, flag them for the next merchant.
         </p>
         <ProfileLine profile={result.profile} />
-        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={onReset}>
-          Check another
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Link
+            href={`/suspicious/new?decoded=${encodeURIComponent(result.decoded)}`}
+            className={buttonVariants({ size: "sm", variant: "outline" })}
+          >
+            <Flag className="h-3.5 w-3.5" /> Flag this taker
+          </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2"
+            onClick={onReset}
+          >
+            Check another
+          </Button>
+        </div>
       </div>
     );
   }
@@ -229,9 +261,28 @@ function ResultView({
           </li>
         ))}
       </ul>
-      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={onReset}>
-        Check another
-      </Button>
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <Link
+          href={`/suspicious/${encodeURIComponent(result.profile.userId)}`}
+          className={buttonVariants({ size: "sm", variant: "outline" })}
+        >
+          Open details
+        </Link>
+        <Link
+          href={`/suspicious/new?decoded=${encodeURIComponent(result.decoded)}`}
+          className={buttonVariants({ size: "sm", variant: "ghost" })}
+        >
+          <Flag className="h-3.5 w-3.5" /> Add another report
+        </Link>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2"
+          onClick={onReset}
+        >
+          Check another
+        </Button>
+      </div>
     </div>
   );
 }
