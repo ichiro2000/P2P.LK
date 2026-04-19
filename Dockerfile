@@ -11,19 +11,24 @@
 # The ingest worker doesn't need Chromium, so it stays on the buildpack
 # (see .do/app.yaml) — this image is for the `web` service only.
 
+# Pin the Playwright browser cache to an absolute path so lookups match
+# no matter where the process is invoked from (DO App Platform sets
+# runtime cwd to /workspace, which would otherwise send Playwright
+# looking at /workspace/.cache/ms-playwright/* and miss the browser the
+# base image pre-installed at /ms-playwright/*).
+#
+# Skip the post-install download: the base image already has a matching
+# Chromium at that path, so `npm ci` should never re-fetch it.
+
 # ── Build stage ──────────────────────────────────────────────────────────
-# Use Playwright's own image as a builder — it already ships with a
-# compatible Chromium + every shared library the browser needs. Saves us
-# chasing Debian's apt-level chromium packaging footguns.
 FROM mcr.microsoft.com/playwright:v1.59.1-noble AS builder
 
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 COPY package.json package-lock.json ./
-# Install with dev deps so `next build` can do its thing. Playwright's
-# own browser is preinstalled in the base image at a known path that we
-# inherit via the runtime stage below.
 RUN npm ci --include=dev
 
 COPY . .
@@ -35,6 +40,8 @@ FROM mcr.microsoft.com/playwright:v1.59.1-noble AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 # The pwuser is set up in the base image with access to the bundled
 # Chromium cache under /ms-playwright. Run as that user so the sandbox
 # options we pass to chromium.launch() are honored.
