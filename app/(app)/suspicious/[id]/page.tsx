@@ -15,6 +15,7 @@ import {
   type SuspiciousReport,
 } from "@/lib/db/suspicious";
 import { OrderTrendChart } from "@/components/suspicious/order-trend-chart";
+import { RemovalRequestForm } from "@/components/suspicious/removal-request-form";
 import { formatCompact, formatPct, formatSLT } from "@/lib/format";
 import {
   AlertTriangle,
@@ -150,6 +151,13 @@ export default async function SuspiciousDetailPage({
 
         <Reveal delay={140}>
           <ReportsList reports={reports} />
+        </Reveal>
+
+        <Reveal delay={180}>
+          <RemovalRequestForm
+            binanceUserId={id}
+            displayName={displayName}
+          />
         </Reveal>
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground">
