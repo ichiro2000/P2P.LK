@@ -186,15 +186,15 @@ function safeParseUrl(s: string): URL | null {
 }
 
 /**
- * Look up an advertiser via Binance's public `adv/search` endpoint — the same
- * one that backs our live markets ingest. We scan several common fiat/asset
- * combos for any ad listed by this advertiser; the first hit gives us the
- * nickname and current stats from the `advertiser` object on the ad.
+ * Live advertiser profile — populated from Binance by whichever path
+ * succeeds first: the cheap `adv/search` probe (free, instant) for
+ * advertisers with active ads, or a Chromium scrape of the
+ * `advertiserDetail` page (expensive, ~3 s) for takers who only open
+ * orders and never publish.
  *
- * This is best-effort: advertisers with no active ads anywhere (typical for
- * buy-side takers like the one in the user's screenshot, who only opens
- * orders instead of publishing) won't be found. Returns `null` in that case
- * so the form falls back to manual display-name entry.
+ * Fields beyond the original set (all-time trades, join date, avg times,
+ * verifications) are only populated when the browser path ran — the
+ * `adv/search` response doesn't include them.
  */
 export type BinanceAdvertiserPublic = {
   nickName: string | null;
@@ -203,6 +203,13 @@ export type BinanceAdvertiserPublic = {
   monthFinishRate: number | null;
   userGrade: number | null;
   vipLevel: number | null;
+  allTradeCount: number | null;
+  avgReleaseTimeSec: number | null;
+  avgPayTimeSec: number | null;
+  registerTime: number | null;
+  emailVerified: boolean | null;
+  mobileVerified: boolean | null;
+  kycVerified: boolean | null;
 };
 
 /** Fiat markets scanned when probing for an advertiser's active ads. USDT is
@@ -213,7 +220,13 @@ const PROBE_FIATS = ["USD", "AED", "EUR", "INR", "LKR", "NGN", "RUB"] as const;
 
 export async function fetchBinanceAdvertiserPublic(
   advertiserNo: string,
-  opts?: { timeoutMs?: number; fiats?: readonly string[] },
+  opts?: {
+    timeoutMs?: number;
+    fiats?: readonly string[];
+    /** Disable the Chromium fallback (used from the lookup endpoint when
+     *  we want a fast-only path — the detail page still opts in). */
+    skipBrowser?: boolean;
+  },
 ): Promise<BinanceAdvertiserPublic | null> {
   if (!/^[sS]?[A-Za-z0-9]{10,}$/.test(advertiserNo)) return null;
   const timeoutMs = opts?.timeoutMs ?? 4000;
@@ -225,7 +238,39 @@ export async function fetchBinanceAdvertiserPublic(
       if (hit) return hit;
     }
   }
-  return null;
+
+  // `adv/search` doesn't surface the account at all if it has no active
+  // ads anywhere. Dynamic-import into the Chromium scraper for a
+  // last-ditch fetch against the public profile page. Callers can skip
+  // this (and keep the response fast) via `skipBrowser: true`.
+  if (opts?.skipBrowser) return null;
+  try {
+    const { fetchBinanceProfileViaBrowser } = await import(
+      "@/lib/qr-resolve-browser"
+    );
+    const profile = await fetchBinanceProfileViaBrowser(advertiserNo);
+    if (!profile || !profile.nickName) return null;
+    return {
+      nickName: profile.nickName,
+      userIdentity: profile.userIdentity,
+      monthOrderCount: profile.monthOrderCount,
+      monthFinishRate: profile.monthFinishRate,
+      userGrade: profile.userGrade,
+      vipLevel: profile.vipLevel,
+      allTradeCount: profile.allTradeCount,
+      avgReleaseTimeSec: profile.avgReleaseTimeSec,
+      avgPayTimeSec: profile.avgPayTimeSec,
+      registerTime: profile.registerTime,
+      emailVerified: profile.emailVerified,
+      mobileVerified: profile.mobileVerified,
+      kycVerified: profile.kycVerified,
+    };
+  } catch (err) {
+    console.error(
+      `[qr-resolve] browser profile fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
 }
 
 async function probeAdvSearch(
@@ -292,6 +337,15 @@ async function probeAdvSearch(
       monthFinishRate: toNum(a.monthFinishRate),
       userGrade: a.userGrade ?? null,
       vipLevel: a.vipLevel ?? null,
+      // Fields not carried on the ad-search response. The detail page
+      // will fall through to the browser scrape to populate these.
+      allTradeCount: null,
+      avgReleaseTimeSec: null,
+      avgPayTimeSec: null,
+      registerTime: null,
+      emailVerified: null,
+      mobileVerified: null,
+      kycVerified: null,
     };
   } catch {
     return null;

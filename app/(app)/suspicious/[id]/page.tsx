@@ -20,6 +20,7 @@ import { OrderTrendChart } from "@/components/suspicious/order-trend-chart";
 import { formatCompact, formatPct, formatRelative, formatSLT } from "@/lib/format";
 import {
   AlertTriangle,
+  Check,
   ExternalLink,
   ShieldAlert,
   TrendingUp,
@@ -279,7 +280,20 @@ function HeaderCard({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-3 lg:grid-cols-6">
+          <Stat
+            label="All trades"
+            value={
+              binance?.allTradeCount != null
+                ? formatCompact(binance.allTradeCount)
+                : "—"
+            }
+            footnote={
+              binance?.allTradeCount != null
+                ? "lifetime · live from Binance"
+                : "needs Binance profile"
+            }
+          />
           <Stat
             label="Orders 30d (latest)"
             value={
@@ -291,10 +305,25 @@ function HeaderCard({
             }
             footnote={
               ordersLatest != null
-                ? "rolling 30d · from our snapshots"
+                ? "rolling 30d · our snapshots"
                 : binance?.monthOrderCount != null
                   ? "rolling 30d · live from Binance"
                   : "rolling 30d"
+            }
+          />
+          <Stat
+            label="30d completion rate"
+            value={
+              binance?.monthFinishRate != null
+                ? formatPct(binance.monthFinishRate, { frac: 2 })
+                : "—"
+            }
+            footnote={
+              binance?.monthFinishRate != null
+                ? binance.monthFinishRate < 0.9
+                  ? "below 90% — high appeal rate"
+                  : "live from Binance"
+                : "needs Binance profile"
             }
           />
           <Stat
@@ -330,21 +359,6 @@ function HeaderCard({
             }
           />
           <Stat
-            label="30d completion rate"
-            value={
-              binance?.monthFinishRate != null
-                ? formatPct(binance.monthFinishRate, { frac: 1 })
-                : "—"
-            }
-            footnote={
-              binance?.monthFinishRate != null
-                ? binance.monthFinishRate < 0.9
-                  ? "below 90% — high appeal rate"
-                  : "live from Binance"
-                : "needs Binance profile"
-            }
-          />
-          <Stat
             label="Ticks since flag"
             value={formatCompact(ticksSinceReport)}
             footnote={
@@ -354,6 +368,48 @@ function HeaderCard({
             }
           />
         </div>
+
+        {binance &&
+          (binance.avgReleaseTimeSec != null ||
+            binance.avgPayTimeSec != null ||
+            binance.registerTime != null ||
+            binance.emailVerified != null ||
+            binance.mobileVerified != null ||
+            binance.kycVerified != null) && (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border/60 pt-4 text-[11px] text-muted-foreground">
+              {binance.registerTime != null && (
+                <span>
+                  Joined{" "}
+                  <span className="font-mono text-foreground">
+                    {formatSLT(new Date(binance.registerTime), {
+                      dateStyle: "medium",
+                    })}
+                  </span>
+                </span>
+              )}
+              {binance.avgReleaseTimeSec != null && (
+                <span>
+                  Avg release{" "}
+                  <span className="font-mono text-foreground">
+                    {formatDurationShort(binance.avgReleaseTimeSec)}
+                  </span>
+                </span>
+              )}
+              {binance.avgPayTimeSec != null && (
+                <span>
+                  Avg pay{" "}
+                  <span className="font-mono text-foreground">
+                    {formatDurationShort(binance.avgPayTimeSec)}
+                  </span>
+                </span>
+              )}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {binance.emailVerified && <VerificationPill label="Email" />}
+                {binance.mobileVerified && <VerificationPill label="SMS" />}
+                {binance.kycVerified && <VerificationPill label="ID" />}
+              </div>
+            </div>
+          )}
       </CardContent>
     </Card>
   );
@@ -428,4 +484,23 @@ function ReportsList({ reports }: { reports: SuspiciousReport[] }) {
       </CardContent>
     </Card>
   );
+}
+
+function VerificationPill({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-[color:var(--color-buy)]/30 bg-[color:var(--color-buy-muted)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[color:var(--color-buy)]">
+      <Check className="h-2.5 w-2.5" strokeWidth={3} />
+      {label}
+    </span>
+  );
+}
+
+/** Short humanized seconds → "1m 38s" or "5m 26s". Mirrors how Binance's
+ *  profile page renders avg times but stays on one line. */
+function formatDurationShort(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) return "—";
+  if (sec < 60) return `${Math.round(sec)}s`;
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
