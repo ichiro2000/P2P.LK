@@ -11,7 +11,9 @@ import { parseBinanceProfile, type BinanceProfileRef } from "@/lib/qr";
 import { AlertTriangle, CheckCircle2, Loader2, Upload } from "lucide-react";
 
 const REASON_PRESETS = [
+  "3rd Party Scam",
   "4th Party Scam",
+  "Crypto Remarks on Payments",
   "Chargeback / payment reversal",
   "Fake payment receipt",
   "Escrow abuse / frivolous appeal",
