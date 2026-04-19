@@ -39,7 +39,7 @@ async function getBrowser(): Promise<Browser> {
     // at /ms-playwright/...). Can still be overridden in dev via env.
     const execPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
     console.log(
-      `[qr-resolve-browser] launching chromium (exec=${execPath ?? "<bundled>"})`,
+      `[qr-resolve-browser] launching chromium (exec=${execPath ?? "<bundled>"}, PLAYWRIGHT_BROWSERS_PATH=${process.env.PLAYWRIGHT_BROWSERS_PATH ?? "<unset>"}, HOME=${process.env.HOME ?? "<unset>"}, cwd=${process.cwd()})`,
     );
     browserPromise = chromium
       .launch({
