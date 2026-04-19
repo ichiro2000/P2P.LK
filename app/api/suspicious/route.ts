@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addReport, listSuspicious } from "@/lib/db/suspicious";
 import { checkAdminToken } from "@/lib/admin-auth";
-import { parseBinanceProfile } from "@/lib/qr";
+import {
+  fetchBinanceAdvertiserPublic,
+  resolveBinanceProfile,
+} from "@/lib/qr-resolve";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -55,7 +58,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const ref = parseBinanceProfile(decoded);
+  // Resolve the QR — short-links get followed server-side so we store the
+  // real advertiserNo, not an opaque redirect URL. Essential for dedupe: the
+  // same merchant can be shared via many short-link codes.
+  const ref = await resolveBinanceProfile(decoded);
   if (!ref) {
     return NextResponse.json(
       {
@@ -66,10 +72,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // When the caller didn't pass a displayName, try to fill it in from our
+  // local merchant snapshots → Binance. Keeps the registry useful when the
+  // poster was in a hurry and just uploaded the QR.
+  let displayName = str(body.displayName, 120);
+  if (!displayName) {
+    const live = await fetchBinanceAdvertiserPublic(ref.userId).catch(
+      () => null,
+    );
+    if (live?.nickName) displayName = live.nickName.slice(0, 120);
+  }
+
   const inserted = await addReport({
     binanceUserId: ref.userId,
     profileUrl: ref.profileUrl,
-    displayName: str(body.displayName, 120),
+    displayName,
     reason,
     notes: str(body.notes, 1000),
     reporter: str(body.reporter, 120),

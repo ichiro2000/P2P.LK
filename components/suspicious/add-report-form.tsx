@@ -29,6 +29,11 @@ export function AddReportForm() {
   const [profile, setProfile] = useState<BinanceProfileRef | null>(null);
   const [decodeError, setDecodeError] = useState<string | null>(null);
   const [decoding, setDecoding] = useState(false);
+  // The user's manually-pasted profile URL, used when the QR encodes a
+  // short-link (e.g. binance.com/qr/XXX) that our server can't follow due to
+  // Binance's WAF challenge. When set, this URL replaces the decoded QR as
+  // the submitted `decoded` payload.
+  const [manualUrl, setManualUrl] = useState("");
 
   const [displayName, setDisplayName] = useState("");
   // `true` while we're looking up the Binance nickname for a freshly-parsed
@@ -56,6 +61,14 @@ export function AddReportForm() {
   const resolvedReason =
     reason === "Other (see notes)" ? customReason.trim() : reason;
 
+  // A real Binance advertiserNo looks like `s<hex>` with at least 16 chars
+  // and no slashes or dots. When the server hands us back an opaque URL-
+  // shaped userId, we know it's a short-link we couldn't follow — surface a
+  // paste-URL fallback so the user can resolve it manually.
+  const isShortLink =
+    profile != null &&
+    !/^[sS]?[A-Za-z0-9]{16,}$/.test(profile.userId);
+
   async function handleFile(file: File) {
     setDecoding(true);
     setDecodeError(null);
@@ -64,18 +77,14 @@ export function AddReportForm() {
     try {
       const raw = await decodeQrFromFile(file);
       setDecoded(raw);
+      // Sync parse is used only for a fast preview; the server-side lookup
+      // below does the real work (follows short-link redirects, hits Binance
+      // for the nickname). When the QR is a short-link without a real
+      // advertiserNo in the URL, the sync pass may return null — that's OK,
+      // the lookup will resolve it.
       const parsed = parseBinanceProfile(raw);
-      if (!parsed) {
-        setDecodeError(
-          "QR decoded, but we couldn't find a Binance advertiserNo in it. Double-check it's a Binance P2P profile QR.",
-        );
-      } else {
-        setProfile(parsed);
-        // Fire-and-forget: if the taker is a known LKR merchant, pre-fill
-        // the display name from the latest snapshot. We only overwrite an
-        // empty field (or a prior auto-fill) so manual input wins.
-        void tryAutoFillDisplayName(raw);
-      }
+      if (parsed) setProfile(parsed);
+      void runServerLookup(raw);
     } catch (e) {
       setDecodeError(e instanceof Error ? e.message : "QR decode failed.");
     } finally {
@@ -83,24 +92,41 @@ export function AddReportForm() {
     }
   }
 
-  async function tryAutoFillDisplayName(rawDecoded: string) {
+  async function runServerLookup(rawDecoded: string) {
     setDisplayNameLoading(true);
     try {
       const r = await fetch(
         `/api/suspicious/lookup?decoded=${encodeURIComponent(rawDecoded)}`,
         { cache: "no-store" },
       );
-      if (!r.ok) return;
-      const json = (await r.json()) as { displayName: string | null };
+      if (!r.ok) {
+        // 422 = couldn't parse — surface that if we have nothing to show.
+        if (r.status === 422 && !profile) {
+          setDecodeError(
+            "QR decoded, but we couldn't find a Binance advertiserNo in it. Double-check it's a Binance P2P profile QR.",
+          );
+        }
+        return;
+      }
+      const json = (await r.json()) as {
+        displayName: string | null;
+        profile: BinanceProfileRef;
+        source?: "snapshot" | "binance" | "none";
+      };
+      // The server's profile reflects the post-redirect advertiserNo, which
+      // is the one that will actually be stored. Always prefer it over the
+      // client-side sync guess.
+      setProfile(json.profile);
       const found = json.displayName?.trim();
-      if (!found) return;
-      setDisplayName((cur) => {
-        // Don't stomp on something the user typed themselves while the
-        // lookup was in flight.
-        if (cur && cur.trim() && !displayNameAuto) return cur;
-        return found;
-      });
-      setDisplayNameAuto(true);
+      if (found) {
+        setDisplayName((cur) => {
+          // Don't stomp on something the user typed themselves while the
+          // lookup was in flight.
+          if (cur && cur.trim() && !displayNameAuto) return cur;
+          return found;
+        });
+        setDisplayNameAuto(true);
+      }
     } catch {
       // Silent — manual entry still works.
     } finally {
@@ -130,7 +156,9 @@ export function AddReportForm() {
           "x-admin-token": token.trim(),
         },
         body: JSON.stringify({
-          decoded,
+          // Prefer the pasted profile URL when we have one — the QR may have
+          // been a short-link our server can't follow.
+          decoded: manualUrl.trim() || decoded,
           displayName: displayName || null,
           reason: resolvedReason,
           notes: notes || null,
@@ -200,7 +228,7 @@ export function AddReportForm() {
                 )}
               </div>
             )}
-            {profile && (
+            {profile && !isShortLink && (
               <div className="rounded-md border border-[color:var(--color-buy)]/40 bg-[color:var(--color-buy-muted)] px-3 py-2 text-xs">
                 <div className="flex items-center gap-2 text-[color:var(--color-buy)]">
                   <CheckCircle2 className="h-3.5 w-3.5" />
@@ -217,6 +245,42 @@ export function AddReportForm() {
                 >
                   {profile.profileUrl}
                 </a>
+              </div>
+            )}
+            {isShortLink && (
+              <div className="space-y-2 rounded-md border border-[color:var(--color-warn)]/40 bg-card/50 px-3 py-2 text-xs">
+                <div className="flex items-start gap-2 text-[color:var(--color-warn)]">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <div className="flex-1">
+                    <div className="font-semibold">
+                      QR is a short-link — one more step
+                    </div>
+                    <p className="mt-0.5 text-muted-foreground">
+                      Binance protects these redirects with a JS challenge, so
+                      we can&apos;t follow it server-side.{" "}
+                      <a
+                        href={decoded}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-foreground"
+                      >
+                        Open the link
+                      </a>{" "}
+                      to land on the profile page, then copy the URL from your
+                      browser&apos;s address bar and paste it below.
+                    </p>
+                  </div>
+                </div>
+                <Input
+                  value={manualUrl}
+                  onChange={(e) => {
+                    setManualUrl(e.target.value);
+                    if (e.target.value.trim()) {
+                      void runServerLookup(e.target.value.trim());
+                    }
+                  }}
+                  placeholder="https://c2c.binance.com/en/advertiserDetail?advertiserNo=…"
+                />
               </div>
             )}
           </div>
