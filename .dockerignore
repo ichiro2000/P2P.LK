@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.github
+.claude
+.DS_Store
+.env
+.env.local
+.env.*.local
+*.log
+coverage
+.vscode
+.idea
+.cursor
+README.md
+DEPLOY.md
