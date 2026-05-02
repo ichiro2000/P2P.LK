@@ -7,11 +7,11 @@
  *   Redirects  : https://c2c.binance.com/en/advertiserDetail
  *                  ?advertiserNo=s53bce2057f9933d5b7ba27cbc054caf2
  *
- * The sync `parseBinanceProfile` in `@/lib/qr` can't follow redirects, so this
+ * The sync `parseBybitProfile` in `@/lib/qr` can't follow redirects, so this
  * module wraps it with an HTTP round-trip for the short-link case.
  */
 
-import { parseBinanceProfile, type BinanceProfileRef } from "@/lib/qr";
+import { parseBybitProfile, type BybitProfileRef } from "@/lib/qr";
 
 const BINANCE_HOST_SUFFIXES = [
   "binance.com",
@@ -131,7 +131,7 @@ export async function resolveBinanceShortLink(
 }
 
 /**
- * Async superset of `parseBinanceProfile`: when the sync parser can't get a
+ * Async superset of `parseBybitProfile`: when the sync parser can't get a
  * real advertiserNo (e.g. the QR is a short-link to `binance.com/qr/XXX`),
  * we fetch the URL, follow redirects to the `advertiserDetail` page, and
  * re-parse the final URL.
@@ -141,10 +141,10 @@ export async function resolveBinanceShortLink(
  */
 export async function resolveBinanceProfile(
   raw: string,
-): Promise<BinanceProfileRef | null> {
+): Promise<BybitProfileRef | null> {
   const trimmed = raw.trim();
 
-  const sync = parseBinanceProfile(trimmed);
+  const sync = parseBybitProfile(trimmed);
   if (sync && looksLikeAdvertiserNo(sync.userId)) {
     return sync;
   }
@@ -162,7 +162,7 @@ export async function resolveBinanceProfile(
   const finalUrl = await resolveBinanceShortLink(fetchable);
   if (!finalUrl) return sync;
 
-  const resolved = parseBinanceProfile(finalUrl);
+  const resolved = parseBybitProfile(finalUrl);
   // If the follow-through found a real advertiserNo, that always beats the
   // opaque-URL fallback. Otherwise return whatever the sync pass gave us.
   if (resolved && looksLikeAdvertiserNo(resolved.userId)) return resolved;
@@ -196,7 +196,7 @@ function safeParseUrl(s: string): URL | null {
  * verifications) are only populated when the browser path ran — the
  * `adv/search` response doesn't include them.
  */
-export type BinanceAdvertiserPublic = {
+export type BybitAdvertiserPublic = {
   nickName: string | null;
   userIdentity: string | null;
   monthOrderCount: number | null;
@@ -232,14 +232,14 @@ const PROBE_FIATS = ["USD", "AED", "EUR", "INR", "LKR", "NGN", "RUB"] as const;
  * "live profile" panel shows a "not available" state rather than stale
  * Binance data. The unused-symbol noise is silenced below.
  */
-export async function fetchBinanceAdvertiserPublic(
+export async function fetchBybitAdvertiserPublic(
   advertiserNo: string,
   opts?: {
     timeoutMs?: number;
     fiats?: readonly string[];
     skipBrowser?: boolean;
   },
-): Promise<BinanceAdvertiserPublic | null> {
+): Promise<BybitAdvertiserPublic | null> {
   void advertiserNo;
   void opts;
   // Reference internal helpers so the deletion remains a one-line change
@@ -256,7 +256,7 @@ export async function fetchBinanceAdvertiserPublic(
 async function fetchProfileDirect(
   advertiserNo: string,
   timeoutMs: number,
-): Promise<BinanceAdvertiserPublic | null> {
+): Promise<BybitAdvertiserPublic | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -344,7 +344,7 @@ async function probeAdvSearch(
   fiat: string,
   tradeType: "BUY" | "SELL",
   timeoutMs: number,
-): Promise<BinanceAdvertiserPublic | null> {
+): Promise<BybitAdvertiserPublic | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {

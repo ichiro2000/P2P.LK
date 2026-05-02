@@ -20,7 +20,7 @@
  * better than rejecting a report we could otherwise dedupe against itself.
  */
 
-export type BinanceProfileRef = {
+export type BybitProfileRef = {
   /** Stable identifier — either the advertiserNo/merchantNo/userNo, or a
    *  normalized Binance URL fallback when no param matched. */
   userId: string;
@@ -52,7 +52,7 @@ const BINANCE_HOST_SUFFIXES = [
 ] as const;
 
 /** Extract a stable identifier from arbitrary decoded QR content. */
-export function parseBinanceProfile(raw: string): BinanceProfileRef | null {
+export function parseBybitProfile(raw: string): BybitProfileRef | null {
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -125,7 +125,7 @@ function normalizedUrlKey(url: URL): string {
   return params ? `${host}${path}?${params}` : `${host}${path}`;
 }
 
-function clean(userId: string): BinanceProfileRef {
+function clean(userId: string): BybitProfileRef {
   const c = userId.trim();
   return {
     userId: c,

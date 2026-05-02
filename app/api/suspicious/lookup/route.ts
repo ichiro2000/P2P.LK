@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  fetchBinanceAdvertiserPublic,
+  fetchBybitAdvertiserPublic,
   resolveBinanceProfile,
 } from "@/lib/qr-resolve";
 import { latestMerchantSnapshotAnyMarket } from "@/lib/db/suspicious";
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Live Binance fetch — the taker hasn't been captured by our LKR ingest.
-  const live = await fetchBinanceAdvertiserPublic(ref.userId).catch(() => null);
+  const live = await fetchBybitAdvertiserPublic(ref.userId).catch(() => null);
   if (live?.nickName) {
     return NextResponse.json({
       profile: ref,

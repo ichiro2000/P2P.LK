@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { addReport, listSuspicious } from "@/lib/db/suspicious";
 import { checkAdminToken } from "@/lib/admin-auth";
 import {
-  fetchBinanceAdvertiserPublic,
+  fetchBybitAdvertiserPublic,
   resolveBinanceProfile,
 } from "@/lib/qr-resolve";
 
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
   // poster was in a hurry and just uploaded the QR.
   let displayName = str(body.displayName, 120);
   if (!displayName) {
-    const live = await fetchBinanceAdvertiserPublic(ref.userId).catch(
+    const live = await fetchBybitAdvertiserPublic(ref.userId).catch(
       () => null,
     );
     if (live?.nickName) displayName = live.nickName.slice(0, 120);

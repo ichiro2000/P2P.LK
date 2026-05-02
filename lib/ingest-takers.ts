@@ -16,7 +16,7 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "./db/client";
-import { fetchBinanceAdvertiserPublic } from "./qr-resolve";
+import { fetchBybitAdvertiserPublic } from "./qr-resolve";
 import { ASSET, FIAT } from "./constants";
 
 export type TakerPollReport = {
@@ -113,7 +113,7 @@ async function pollOne(
   takerId: string,
   ts: number,
 ): Promise<{ id: string; inserted: boolean }> {
-  const profile = await fetchBinanceAdvertiserPublic(takerId, {
+  const profile = await fetchBybitAdvertiserPublic(takerId, {
     timeoutMs: 5000,
     skipBrowser: true,
   });
