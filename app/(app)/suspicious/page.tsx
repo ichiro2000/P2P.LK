@@ -47,7 +47,7 @@ export default async function SuspiciousPage() {
         <SectionHeader
           kicker="Community registry"
           title="Is this taker safe to trade with?"
-          description="Upload a Binance Share-Profile QR to check it against reports from other merchants. Decoding happens locally in your browser — the image never leaves your device."
+          description="Upload a Bybit Share-Profile QR to check it against reports from other merchants. Decoding happens locally in your browser — the image never leaves your device."
         />
 
         <Reveal>

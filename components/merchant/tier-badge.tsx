@@ -3,7 +3,7 @@ import type { MerchantTier } from "@/lib/merchant-tier";
 import { TIER_LABEL } from "@/lib/merchant-tier";
 
 /**
- * Tiny verified-merchant tier badge — matches Binance's bronze/silver/gold
+ * Tiny verified-merchant tier badge — matches Bybit's bronze/silver/gold
  * visual convention so users recognise it at a glance. Renders as a small
  * rounded shield with a tier-tinted gradient + a subtle check mark.
  *
@@ -34,7 +34,7 @@ export function TierBadge({
         "inline-flex items-center gap-1 align-middle",
         className,
       )}
-      title={`${TIER_LABEL[tier]} Verified Merchant · from Binance`}
+      title={`${TIER_LABEL[tier]} Verified Merchant · from Bybit`}
     >
       <span
         className={cn(
@@ -62,7 +62,7 @@ export function TierBadge({
 }
 
 /**
- * Tier colour tokens. Gradients roughly match Binance's own
+ * Tier colour tokens. Gradients roughly match Bybit's own
  * `verified-merchant-{tier}.png` spritesheet so users recognise the badges
  * at a glance without us pulling their CDN assets.
  */

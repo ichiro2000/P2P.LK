@@ -12,7 +12,7 @@ import { DepthHeatmap } from "@/components/liquidity/depth-heatmap";
 import { DepthTrend } from "@/components/liquidity/depth-trend";
 import { Empty } from "@/components/common/empty";
 import { CloudOff } from "lucide-react";
-import { fetchBothSides, normalizeAds } from "@/lib/binance";
+import { fetchBothSides, normalizeAds } from "@/lib/bybit";
 import { buildMarket } from "@/lib/analytics";
 import { concentrationByMerchant } from "@/lib/liquidity";
 import {
@@ -117,7 +117,7 @@ export default async function LiquidityPage({
         {!liveOk && snapshots.length === 0 ? (
           <Empty
             icon={CloudOff}
-            title="Couldn't reach Binance P2P"
+            title="Couldn't reach Bybit P2P"
             description="Live book can't be fetched and no historical data is available for this market yet."
             tone="warn"
           />

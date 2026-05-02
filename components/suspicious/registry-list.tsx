@@ -188,7 +188,7 @@ function TakerBlock({
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 underline hover:text-foreground"
             >
-              Open on Binance <ExternalLink className="h-3 w-3" />
+              Open on Bybit <ExternalLink className="h-3 w-3" />
             </a>
             {activity?.lastSeenTs && (
               <span className="text-muted-foreground/70">

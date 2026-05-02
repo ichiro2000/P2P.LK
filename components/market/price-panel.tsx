@@ -60,7 +60,7 @@ function PriceTile({
   const Icon = tone === "buy" ? ArrowUpRight : ArrowDownRight;
   // Retail-centric coloring: publisher's BUY ad = your sell opportunity
   // (red), publisher's SELL ad = your buy opportunity (green). Matches
-  // Binance P2P's own UI convention.
+  // Bybit P2P's own UI convention.
   const color =
     tone === "buy"
       ? "text-[color:var(--color-sell)]"

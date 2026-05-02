@@ -1,5 +1,5 @@
 import { getDb, schema } from "@/lib/db/client";
-import { fetchAdsDeep, normalizeAds } from "@/lib/binance";
+import { fetchAdsDeep, normalizeAds } from "@/lib/bybit";
 import { buildMarket, summarizeMerchants } from "@/lib/analytics";
 import { ASSET, FIAT, resolveBankPayTypes } from "@/lib/constants";
 

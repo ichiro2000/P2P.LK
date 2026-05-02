@@ -3,7 +3,7 @@ import { FilterBar, type FilterState } from "@/components/market/filter-bar";
 import { SectionHeader } from "@/components/common/section-header";
 import { LiveDot } from "@/components/common/live-dot";
 import { MarketStar } from "@/components/workspace/star-button";
-import { fetchBothSides, normalizeAds } from "@/lib/binance";
+import { fetchBothSides, normalizeAds } from "@/lib/bybit";
 import {
   buildMarket,
   mergeMerchantDirectory,
@@ -20,7 +20,7 @@ export const revalidate = 30;
 export const metadata = {
   title: "Merchants",
   description:
-    "Counterparty analytics for Sri Lankan bank-transfer P2P on Binance.",
+    "Counterparty analytics for Sri Lankan bank-transfer P2P on Bybit.",
 };
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
@@ -100,7 +100,7 @@ export default async function MerchantsPage({
         ) : (
           <Empty
             icon={CloudOff}
-            title="Couldn't reach Binance P2P"
+            title="Couldn't reach Bybit P2P"
             description="The public P2P endpoint rejected our request or is temporarily unavailable."
             tone="warn"
           />

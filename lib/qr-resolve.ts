@@ -218,39 +218,35 @@ export type BinanceAdvertiserPublic = {
  *  liquid first so we exit fast when we get a hit on the first try. */
 const PROBE_FIATS = ["USD", "AED", "EUR", "INR", "LKR", "NGN", "RUB"] as const;
 
+/**
+ * Resolve an advertiser's public profile by user id.
+ *
+ * Stubbed for the Bybit port: the previous implementation hit Binance's
+ * `profile-and-ads-list` endpoint, which obviously doesn't apply here. Bybit
+ * has an equivalent (`/fiat/otc/configuration/queryUserDetail` and friends)
+ * but the response shape differs significantly enough that wiring it up is a
+ * separate task — see SUMMARY.md.
+ *
+ * Returning null degrades the suspicious-merchant detail flow gracefully:
+ * the page renders with whatever stored fields we already have, and the
+ * "live profile" panel shows a "not available" state rather than stale
+ * Binance data. The unused-symbol noise is silenced below.
+ */
 export async function fetchBinanceAdvertiserPublic(
   advertiserNo: string,
   opts?: {
     timeoutMs?: number;
     fiats?: readonly string[];
-    /** Kept for backwards compatibility — the primary path no longer
-     *  launches a browser, so this flag is essentially a no-op now. */
     skipBrowser?: boolean;
   },
 ): Promise<BinanceAdvertiserPublic | null> {
-  if (!/^[sS]?[A-Za-z0-9]{10,}$/.test(advertiserNo)) return null;
-  const timeoutMs = opts?.timeoutMs ?? 4000;
-
-  // Primary path: hit `profile-and-ads-list` directly. This is the same
-  // endpoint the Binance advertiserDetail HTML page calls on first paint;
-  // it returns for ANY user (including zero-ad takers) and doesn't need
-  // a browser to solve a WAF challenge.
-  const direct = await fetchProfileDirect(advertiserNo, timeoutMs);
-  if (direct?.nickName) return direct;
-
-  // Safety net: if Binance ever rotates the profile-and-ads-list endpoint,
-  // fall back to scanning `adv/search` for any active ad whose advertiser
-  // matches. This only resolves merchants with active ads, but keeps the
-  // display-name auto-fill working while we patch.
-  const fiats = opts?.fiats ?? PROBE_FIATS;
-  for (const fiat of fiats) {
-    for (const tradeType of ["BUY", "SELL"] as const) {
-      const hit = await probeAdvSearch(advertiserNo, fiat, tradeType, timeoutMs);
-      if (hit) return hit;
-    }
-  }
-
-  void opts?.skipBrowser;
+  void advertiserNo;
+  void opts;
+  // Reference internal helpers so the deletion remains a one-line change
+  // when the Bybit profile endpoint is wired in.
+  void fetchProfileDirect;
+  void probeAdvSearch;
+  void PROBE_FIATS;
   return null;
 }
 

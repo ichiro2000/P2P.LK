@@ -1,67 +1,68 @@
 /**
- * Shape of the Binance P2P public `adv/search` response.
+ * Shape of the Bybit P2P public `/fiat/otc/item/online` response.
  * Only fields the app actually uses are typed strictly;
  * everything else falls through unknown to stay resilient to backend changes.
  */
 
 export type TradeType = "BUY" | "SELL";
 
-export type PayTypeBadge = {
-  identifier: string;
-  tradeMethodName: string;
-  tradeMethodShortName?: string;
-  tradeMethodBgColor?: string;
-};
-
-export type BinanceAdvertiser = {
-  userNo: string;
+/**
+ * Bybit ad item — one row from `result.items[]`. The raw response carries
+ * many more fields (tradingPreferenceSet, symbolInfo, verificationOrder*, …)
+ * that we don't currently use; keep them off the type to avoid noise but
+ * remember they exist if a downstream feature wants them.
+ */
+export type BybitItem = {
+  id: string;
+  /** "0" = bid (publisher buys USDT), "1" = ask (publisher sells USDT) */
+  side: number | string;
+  userId: string;
+  accountId?: string;
   nickName: string;
-  /** "merchant" or "user" */
-  userType?: string;
-  /** e.g. MASS_MERCHANT, BLOCK_MERCHANT */
-  userIdentity?: string;
-  userGrade?: number;
-  /** Binance's actual tier driver (1 = Bronze, 2 = Silver, 3 = Gold).
-   *  Only populated when userType = "merchant". */
-  vipLevel?: number | null;
-  monthOrderCount?: number;
-  /** 0..1 */
-  monthFinishRate?: number;
-  /** 0..1 — positive review rate */
-  positiveRate?: number;
-  /** seconds */
-  avgReleaseTimeOfLatestOnline?: number;
-  /** seconds */
-  avgResponseTime?: number;
-};
-
-export type BinanceAdv = {
-  advNo: string;
-  classify?: string;
-  tradeType: TradeType;
-  asset: string;
-  fiatUnit: string;
+  tokenId: string;
+  currencyId: string;
   price: string;
-  minSingleTransAmount: string;
-  maxSingleTransAmount: string;
-  tradableQuantity: string;
-  surplusAmount: string;
-  tradeMethods: PayTypeBadge[];
-  isTradable?: boolean;
-  autoReplyMsg?: string;
+  premium?: string;
+  /** Remaining unfilled quantity, in asset units. */
+  lastQuantity: string;
+  /** Original total quantity. */
+  quantity: string;
+  frozenQuantity?: string;
+  executedQuantity?: string;
+  /** Min single-order in fiat. */
+  minAmount: string;
+  /** Max single-order in fiat. */
+  maxAmount: string;
+  remark?: string;
+  /** Bybit pay-method ids, e.g. ["14"] for LKR bank transfer. */
+  payments: string[];
+  /** Lifetime order count for the merchant. */
+  orderNum?: number;
+  /** Lifetime finished order count. */
+  finishNum?: number;
+  /** ~30-day order count. */
+  recentOrderNum?: number;
+  /** ~30-day completion rate, expressed 0..100. */
+  recentExecuteRate?: number;
+  /** "PERSONAL", "MERCHANT", … */
+  userType?: string;
+  authStatus?: number;
+  authTag?: string[];
+  isOnline?: boolean;
+  blocked?: string;
+  ban?: boolean;
+  baned?: boolean;
 };
 
-export type BinanceAdItem = {
-  adv: BinanceAdv;
-  advertiser: BinanceAdvertiser;
+export type BybitSearchResult = {
+  count: number;
+  items: BybitItem[];
 };
 
-export type BinanceSearchResponse = {
-  code?: string;
-  message?: string | null;
-  success?: boolean;
-  total?: number;
-  data: BinanceAdItem[];
+export type BybitSearchResponse = {
+  ret_code: number;
+  ret_msg?: string;
+  result: BybitSearchResult;
 };
 
 /** ── Domain types (normalized for app use) ─────────────────────────────── */
@@ -72,7 +73,7 @@ export type SearchFilters = {
   asset: string;
   fiat: string;
   tradeType: TradeType;
-  /** Pay type identifiers (Binance uses e.g. "BANKTransferSRILANKA") */
+  /** Bybit pay-method ids (numeric strings, e.g. "14" for LKR bank transfer). */
   payTypes?: string[];
   /** Amount of fiat the user wants to transact — for relevant ads only */
   transAmount?: string;
@@ -101,11 +102,13 @@ export type NormalizedAd = {
     id: string;
     name: string;
     isMerchant: boolean;
-    /** Binance `userIdentity` — MASS_MERCHANT, BLOCK_MERCHANT, etc. */
+    /** Free-form publisher tag. On Bybit we stamp `authTag.join(",")`
+     *  (e.g. "GA", "GA,KYC") so existing UI badge logic still has a hook. */
     userIdentity?: string;
-    /** Binance `userGrade` — merchant-vs-user flag, NOT the tier. */
+    /** Legacy Binance grade; unused on Bybit but kept on the shape so
+     *  downstream typing stays stable. */
     grade?: number;
-    /** Binance `vipLevel` (1/2/3) — the real tier: bronze / silver / gold. */
+    /** Legacy Binance VIP tier (1/2/3). Bybit has no equivalent → null. */
     vipLevel?: number | null;
     orders30d: number;
     completionRate: number; // 0..1

@@ -9,7 +9,7 @@ import {
 import { and, asc, eq, gte } from "drizzle-orm";
 import { computeRiskReport } from "@/lib/risk";
 import { mean, stdev } from "@/lib/stats";
-import { fetchBothSides, normalizeAds } from "@/lib/binance";
+import { fetchBothSides, normalizeAds } from "@/lib/bybit";
 import { buildMarket, summarizeMerchants } from "@/lib/analytics";
 import { resolveBankPayTypes } from "@/lib/constants";
 import { formatSLT } from "@/lib/format";

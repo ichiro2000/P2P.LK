@@ -39,12 +39,12 @@ type SortKey =
   | "avgReleaseSec"
   | "lastSeenTs";
 
-/** Build the Binance public advertiser URL from a userNo. */
-function binanceAdvertiserUrl(id: string): string {
-  return `https://c2c.binance.com/en/advertiserDetail?advertiserNo=${encodeURIComponent(id)}`;
+/** Build the Bybit public advertiser URL from a userId. */
+function bybitAdvertiserUrl(id: string): string {
+  return `https://www.bybit.com/fiat/trade/otc/profile/${encodeURIComponent(id)}`;
 }
 
-/** Compact the Binance pay-method labels for a narrow badge. */
+/** Compact the Bybit pay-method labels for a narrow badge. */
 function shortPayRail(name: string): string {
   if (/\(\s*sri lanka\s*\)/i.test(name)) return "LK Bank";
   if (/^bank transfer/i.test(name)) return "Bank";
@@ -233,12 +233,12 @@ function MerchantRowCmp({
                 <span className="truncate">{m.name}</span>
               </Link>
               <a
-                href={binanceAdvertiserUrl(m.id)}
+                href={bybitAdvertiserUrl(m.id)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-primary"
-                aria-label={`Open ${m.name} on Binance`}
-                title={`Open ${m.name} on Binance`}
+                aria-label={`Open ${m.name} on Bybit`}
+                title={`Open ${m.name} on Bybit`}
                 onClick={(e) => e.stopPropagation()}
               >
                 <ExternalLink className="h-3 w-3" strokeWidth={2} />

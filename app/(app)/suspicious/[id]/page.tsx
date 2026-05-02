@@ -26,8 +26,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  fetchBinanceAdvertiserPublic,
-  type BinanceAdvertiserPublic,
+  fetchBybitAdvertiserPublic,
+  type BybitAdvertiserPublic,
 } from "@/lib/qr-resolve";
 
 export const metadata = { title: "Suspicious taker · detail" };
@@ -57,9 +57,9 @@ export default async function SuspiciousDetailPage({
   const [activity, orderHistory, binanceLive] = await Promise.all([
     activityForSuspicious(id, firstReportTs).catch(() => null),
     suspiciousOrderHistory(id).catch(() => []),
-    // Live Binance fetch — public endpoint, no auth. Gives us verifications,
+    // Live Bybit fetch — public endpoint, no auth. Gives us verifications,
     // join date, and all-time trade count that we don't store locally.
-    fetchBinanceAdvertiserPublic(id).catch(() => null),
+    fetchBybitAdvertiserPublic(id).catch(() => null),
   ]);
 
   const head = reports[0];
@@ -193,9 +193,9 @@ function HeaderCard({
   ordersAtReport: number | null;
   ordersDelta: number | null;
   ticksSinceReport: number;
-  binance: BinanceAdvertiserPublic | null;
+  binance: BybitAdvertiserPublic | null;
 }) {
-  // Derive account age in whole days from Binance's registerTime (ms).
+  // Derive account age in whole days from Bybit's registerTime (ms).
   // Fresh accounts are the single strongest scam signal — we flash the
   // stat red under 30 days, amber under 90.
   const accountAgeDays =
@@ -273,7 +273,7 @@ function HeaderCard({
               className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/50 px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary"
             >
               <ExternalLink className="h-3.5 w-3.5" strokeWidth={2} />
-              View on Binance
+              View on Bybit
             </a>
           </div>
         </div>
@@ -300,7 +300,7 @@ function HeaderCard({
                   ? "under 90 days — still new"
                   : accountAgeDays != null
                     ? "days since registration"
-                    : "needs Binance profile"
+                    : "needs Bybit profile"
             }
           />
           <Stat
@@ -312,8 +312,8 @@ function HeaderCard({
             }
             footnote={
               binance?.allTradeCount != null
-                ? "lifetime · live from Binance"
-                : "needs Binance profile"
+                ? "lifetime · live from Bybit"
+                : "needs Bybit profile"
             }
           />
           <Stat
@@ -329,7 +329,7 @@ function HeaderCard({
               ordersLatest != null
                 ? "rolling 30d · our snapshots"
                 : binance?.monthOrderCount != null
-                  ? "rolling 30d · live from Binance"
+                  ? "rolling 30d · live from Bybit"
                   : "rolling 30d"
             }
           />
@@ -344,8 +344,8 @@ function HeaderCard({
               binance?.monthFinishRate != null
                 ? binance.monthFinishRate < 0.9
                   ? "below 90% — high cancellation rate"
-                  : "live from Binance"
-                : "needs Binance profile"
+                  : "live from Bybit"
+                : "needs Bybit profile"
             }
           />
           <Stat
@@ -517,7 +517,7 @@ function VerificationPill({ label }: { label: string }) {
   );
 }
 
-/** Short humanized seconds → "1m 38s" or "5m 26s". Mirrors how Binance's
+/** Short humanized seconds → "1m 38s" or "5m 26s". Mirrors how Bybit's
  *  profile page renders avg times but stays on one line. */
 function formatDurationShort(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "—";

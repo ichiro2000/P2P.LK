@@ -46,20 +46,23 @@ export function getFiat(code: string): FiatOption | undefined {
 
 /**
  * The only pay-method identifiers we accept. Discovered empirically from
- * Binance's adv/search response for LKR: every ad uses one of these two.
- * Anything else (mobile top-up, airtime, gift cards) is out of scope.
+ * Bybit's `/fiat/otc/item/online` response for LKR: every ad uses pay-id
+ * `"14"` (Bank Transfer). Anything else (mobile top-up, airtime, gift cards)
+ * is out of scope.
+ *
+ * Bybit publishes only a numeric id on each ad; the human label is resolved
+ * here so the UI doesn't need a separate dictionary.
  */
-export const BANK_TRANSFER_IDS = ["BANK", "BankSriLanka"] as const;
+export const BANK_TRANSFER_IDS = ["14"] as const;
 export type BankTransferId = (typeof BANK_TRANSFER_IDS)[number];
 
 export const BANK_TRANSFER_OPTIONS: { id: BankTransferId; label: string }[] = [
-  { id: "BANK", label: "Bank Transfer" },
-  { id: "BankSriLanka", label: "Bank Transfer (Sri Lanka)" },
+  { id: "14", label: "Bank Transfer (Sri Lanka)" },
 ];
 
 /**
  * Resolve the filter bar's payType selection into the list we actually pass
- * to Binance. Empty string means "both" — default everywhere in the UI.
+ * to Bybit. Empty string means "all bank rails" — currently a one-element list.
  */
 export function resolveBankPayTypes(selection: string | null | undefined): string[] {
   if (!selection) return [...BANK_TRANSFER_IDS];

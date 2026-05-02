@@ -20,7 +20,7 @@ type Point = { price: number; cumAsk: number; cumBid: number; side: "BID" | "ASK
  * BID side: ads sorted desc by price, cumulative available going down.
  * ASK side: ads sorted asc by price, cumulative available going up.
  *
- * Not a real Binance depth chart (the feed doesn't include historical book),
+ * Not a real Bybit depth chart (the feed doesn't include historical book),
  * but instantly useful for eyeballing where liquidity sits.
  */
 export function DepthSnapshot({ market }: { market: MarketSnapshot }) {

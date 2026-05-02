@@ -14,7 +14,7 @@ import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 
 /**
  * Compact live card for a single watchlisted market. Polls at 30s (workspace
- * is many cards so we don't want to hammer Binance). Links through to the
+ * is many cards so we don't want to hammer Bybit). Links through to the
  * Live Markets page preset on this pair.
  */
 export function WatchlistMarketCard({ ref }: { ref: MarketRef }) {

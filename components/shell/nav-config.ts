@@ -69,7 +69,7 @@ export const NAV_SECTIONS: NavSection[] = [
         href: "/suspicious",
         label: "Suspicious",
         icon: UserX,
-        description: "Community registry of flagged Binance takers",
+        description: "Community registry of flagged Bybit takers",
       },
     ],
   },

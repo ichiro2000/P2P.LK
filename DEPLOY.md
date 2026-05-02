@@ -95,10 +95,10 @@ against the pool without code changes. App redeploys automatically.
 - **DB is still `online-creating` when app deploys** — App Platform will
   retry. If the worker crashes with a connection error, re-deploy the app
   once the DB badge turns green.
-- **Binance 429 / captcha in the ingest log** — public-feed throttling.
+- **Bybit 429 / captcha in the ingest log** — public-feed throttling.
   The worker swallows per-market errors and retries on the next tick.
 - **Historical page empty after 30 min** — check the ingest worker runtime
-  log. Usually means the DB connection failed (rare) or Binance is
+  log. Usually means the DB connection failed (rare) or Bybit is
   consistently rate-limiting the egress IP (rarer).
 
 ## Costs, ballpark

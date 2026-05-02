@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { decodeQrFromFile } from "@/lib/qr-decode-client";
-import { parseBinanceProfile, type BinanceProfileRef } from "@/lib/qr";
+import { parseBybitProfile, type BybitProfileRef } from "@/lib/qr";
 import { AlertTriangle, CheckCircle2, Loader2, Upload } from "lucide-react";
 
 const REASON_PRESETS = [
@@ -29,22 +29,22 @@ export function AddReportForm() {
   const searchParams = useSearchParams();
 
   const [decoded, setDecoded] = useState<string>("");
-  const [profile, setProfile] = useState<BinanceProfileRef | null>(null);
+  const [profile, setProfile] = useState<BybitProfileRef | null>(null);
   const [decodeError, setDecodeError] = useState<string | null>(null);
   const [decoding, setDecoding] = useState(false);
   // The user's manually-pasted profile URL, used when the QR encodes a
   // short-link (e.g. binance.com/qr/XXX) that our server can't follow due to
-  // Binance's WAF challenge. When set, this URL replaces the decoded QR as
+  // Bybit's WAF challenge. When set, this URL replaces the decoded QR as
   // the submitted `decoded` payload.
   const [manualUrl, setManualUrl] = useState("");
 
   const [displayName, setDisplayName] = useState("");
-  // `true` while we're looking up the Binance nickname for a freshly-parsed
+  // `true` while we're looking up the Bybit nickname for a freshly-parsed
   // advertiserNo. UI disables the name field to avoid the user racing the
   // auto-fill with manual typing.
   const [displayNameLoading, setDisplayNameLoading] = useState(false);
   // `true` when the current value of `displayName` came back from the lookup
-  // endpoint — lets us render a "Auto-filled from Binance" hint and avoid
+  // endpoint — lets us render a "Auto-filled from Bybit" hint and avoid
   // overwriting a value the user typed themselves.
   const [displayNameAuto, setDisplayNameAuto] = useState(false);
   const [reason, setReason] = useState<string>(REASON_PRESETS[0]);
@@ -64,7 +64,7 @@ export function AddReportForm() {
   const resolvedReason =
     reason === "Other (see notes)" ? customReason.trim() : reason;
 
-  // A real Binance advertiserNo looks like `s<hex>` with at least 16 chars
+  // A real Bybit advertiserNo looks like `s<hex>` with at least 16 chars
   // and no slashes or dots. When the server hands us back an opaque URL-
   // shaped userId, we know it's a short-link we couldn't follow — surface a
   // paste-URL fallback so the user can resolve it manually.
@@ -82,7 +82,7 @@ export function AddReportForm() {
     if (!seeded) return;
     if (seeded === decoded) return;
     setDecoded(seeded);
-    const parsed = parseBinanceProfile(seeded);
+    const parsed = parseBybitProfile(seeded);
     if (parsed) setProfile(parsed);
     void runServerLookup(seeded);
     // `runServerLookup` is stable (closes over state setters only) — pulling
@@ -99,11 +99,11 @@ export function AddReportForm() {
       const raw = await decodeQrFromFile(file);
       setDecoded(raw);
       // Sync parse is used only for a fast preview; the server-side lookup
-      // below does the real work (follows short-link redirects, hits Binance
+      // below does the real work (follows short-link redirects, hits Bybit
       // for the nickname). When the QR is a short-link without a real
       // advertiserNo in the URL, the sync pass may return null — that's OK,
       // the lookup will resolve it.
-      const parsed = parseBinanceProfile(raw);
+      const parsed = parseBybitProfile(raw);
       if (parsed) setProfile(parsed);
       void runServerLookup(raw);
     } catch (e) {
@@ -124,14 +124,14 @@ export function AddReportForm() {
         // 422 = couldn't parse — surface that if we have nothing to show.
         if (r.status === 422 && !profile) {
           setDecodeError(
-            "QR decoded, but we couldn't find a Binance advertiserNo in it. Double-check it's a Binance P2P profile QR.",
+            "QR decoded, but we couldn't find a Bybit advertiserNo in it. Double-check it's a Bybit P2P profile QR.",
           );
         }
         return;
       }
       const json = (await r.json()) as {
         displayName: string | null;
-        profile: BinanceProfileRef;
+        profile: BybitProfileRef;
         source?: "snapshot" | "binance" | "none";
       };
       // The server's profile reflects the post-redirect advertiserNo, which
@@ -211,7 +211,7 @@ export function AddReportForm() {
           Add a report
         </CardTitle>
         <p className="text-[11px] text-muted-foreground/70">
-          Upload the taker&apos;s Binance Share-Profile QR. We decode it in
+          Upload the taker&apos;s Bybit Share-Profile QR. We decode it in
           your browser, extract the advertiserNo, and submit the report with
           your reason.
         </p>
@@ -241,7 +241,7 @@ export function AddReportForm() {
                       {decoded}
                     </code>
                     <p className="mt-1 text-[10px] text-muted-foreground/70">
-                      If this looks like a Binance link but isn&apos;t matching,
+                      If this looks like a Bybit link but isn&apos;t matching,
                       copy it and share with the maintainer so the parser can
                       be extended.
                     </p>
@@ -277,7 +277,7 @@ export function AddReportForm() {
                       QR is a short-link — one more step
                     </div>
                     <p className="mt-0.5 text-muted-foreground">
-                      Binance protects these redirects with a JS challenge, so
+                      Bybit protects these redirects with a JS challenge, so
                       we can&apos;t follow it server-side.{" "}
                       <a
                         href={decoded}
@@ -300,7 +300,7 @@ export function AddReportForm() {
                       void runServerLookup(e.target.value.trim());
                     }
                   }}
-                  placeholder="https://c2c.binance.com/en/advertiserDetail?advertiserNo=…"
+                  placeholder="https://www.bybit.com/fiat/trade/otc/profile/…"
                 />
               </div>
             )}
@@ -317,7 +317,7 @@ export function AddReportForm() {
                   }}
                   placeholder={
                     displayNameLoading
-                      ? "Looking up from Binance…"
+                      ? "Looking up from Bybit…"
                       : "Auto-filled from QR · edit if wrong"
                   }
                   maxLength={120}
@@ -330,7 +330,7 @@ export function AddReportForm() {
               {displayNameAuto && !displayNameLoading && (
                 <p className="mt-1 flex items-center gap-1 text-[10px] text-[color:var(--color-buy)]">
                   <CheckCircle2 className="h-3 w-3" />
-                  Auto-filled from Binance snapshots · edit if the nickname has
+                  Auto-filled from Bybit snapshots · edit if the nickname has
                   changed.
                 </p>
               )}

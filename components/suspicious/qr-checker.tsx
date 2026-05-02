@@ -16,16 +16,16 @@ import {
   ExternalLink,
 } from "lucide-react";
 import type { SuspiciousReport } from "@/lib/db/suspicious";
-import type { BinanceProfileRef } from "@/lib/qr";
+import type { BybitProfileRef } from "@/lib/qr";
 
 type Result =
   | { kind: "idle" }
   | { kind: "decoding" }
   | { kind: "checking"; decoded: string }
-  | { kind: "clean"; profile: BinanceProfileRef; decoded: string }
+  | { kind: "clean"; profile: BybitProfileRef; decoded: string }
   | {
       kind: "flagged";
-      profile: BinanceProfileRef;
+      profile: BybitProfileRef;
       reports: SuspiciousReport[];
       decoded: string;
     }
@@ -87,7 +87,7 @@ export function QrChecker() {
           Check a QR
         </CardTitle>
         <p className="text-[11px] text-muted-foreground/70">
-          Upload a Binance Share-Profile QR to see if the taker has been
+          Upload a Bybit Share-Profile QR to see if the taker has been
           reported by the community.
         </p>
       </CardHeader>
@@ -287,7 +287,7 @@ function ResultView({
   );
 }
 
-function ProfileLine({ profile }: { profile: BinanceProfileRef }) {
+function ProfileLine({ profile }: { profile: BybitProfileRef }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
       <span className="font-mono">advertiserNo: {profile.userId}</span>
@@ -297,7 +297,7 @@ function ProfileLine({ profile }: { profile: BinanceProfileRef }) {
         rel="noopener noreferrer"
         className="inline-flex items-center gap-1 underline hover:text-foreground"
       >
-        Open on Binance <ExternalLink className="h-3 w-3" />
+        Open on Bybit <ExternalLink className="h-3 w-3" />
       </a>
     </div>
   );

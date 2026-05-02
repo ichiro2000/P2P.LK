@@ -1,7 +1,7 @@
-# P2P.LK — Binance P2P Analytics
+# P2P.LK — Bybit P2P Analytics
 
 Live market data, cross-country arbitrage scanner, merchant analytics,
-time-series history and anomaly detection for the Binance P2P market.
+time-series history and anomaly detection for the Bybit P2P market.
 Dark-first, data-dense, production-ready.
 
 ## Stack
@@ -9,7 +9,7 @@ Dark-first, data-dense, production-ready.
 - Next.js 16 (App Router) · React 19 · TypeScript
 - Tailwind CSS v4 · shadcn/ui (Base UI) · Recharts · Lucide
 - Postgres (DO Managed) · Drizzle ORM · `postgres-js` · `tsx` for CLI scripts
-- Data source: Binance P2P public endpoint (no auth required)
+- Data source: Bybit P2P public endpoint (no auth required)
 
 ## Features
 
@@ -79,7 +79,7 @@ needs to be pasted as a secret in the DO dashboard. Full walkthrough in
 ## Architecture
 
 **Data**
-- `lib/binance.ts` — Binance P2P fetcher with URL-cached ISR.
+- `lib/bybit.ts` — Bybit P2P fetcher with URL-cached ISR.
 - `lib/ingest.ts` — Captures snapshots into Postgres (markets + merchants).
 - `lib/db/{schema,client,queries}.ts` — Drizzle schema, postgres-js client
   (with `prepare: false` for Supabase's transaction pooler), query helpers.

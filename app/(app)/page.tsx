@@ -4,7 +4,7 @@ import { LiveMarket } from "@/components/market/live-market";
 import { SectionHeader } from "@/components/common/section-header";
 import { LiveDot } from "@/components/common/live-dot";
 import { MarketStar } from "@/components/workspace/star-button";
-import { fetchBothSides, normalizeAds } from "@/lib/binance";
+import { fetchBothSides, normalizeAds } from "@/lib/bybit";
 import { buildMarket } from "@/lib/analytics";
 import { ASSET, FIAT, resolveBankPayTypes } from "@/lib/constants";
 import { Empty } from "@/components/common/empty";
@@ -61,7 +61,7 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         <SectionHeader
           kicker="Market overview"
-          title={`${FIAT.flag} USDT on Binance P2P · LKR bank transfers`}
+          title={`${FIAT.flag} USDT on Bybit P2P · LKR bank transfers`}
           description="Top-of-book prices, round-trip spread, live depth and the advertisements you can actually trade against — scoped to Sri Lankan bank transfers. Refreshed every 20 seconds."
         />
 
@@ -72,7 +72,7 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
         ) : (
           <Empty
             icon={CloudOff}
-            title="Couldn't reach Binance P2P"
+            title="Couldn't reach Bybit P2P"
             description="The public P2P endpoint rejected our request or is temporarily unavailable. This happens occasionally — try refreshing in a few seconds."
             tone="warn"
           />

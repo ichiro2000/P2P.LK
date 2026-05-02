@@ -28,7 +28,7 @@ export default function ErrorBoundary({
           Something went wrong
         </h1>
         <p className="mt-2 max-w-md text-sm text-muted-foreground">
-          The public Binance P2P feed can reject our requests when under load.
+          The public Bybit P2P feed can reject our requests when under load.
           Try again in a few seconds.
         </p>
         {error?.digest && (

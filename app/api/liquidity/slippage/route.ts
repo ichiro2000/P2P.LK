@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchBothSides, normalizeAds } from "@/lib/binance";
+import { fetchBothSides, normalizeAds } from "@/lib/bybit";
 import { computeSlippage } from "@/lib/liquidity";
 import { resolveBankPayTypes } from "@/lib/constants";
 import type { TradeType } from "@/lib/types";

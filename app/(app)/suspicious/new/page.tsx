@@ -15,7 +15,7 @@ export default function NewSuspiciousPage() {
         <SectionHeader
           kicker="New report"
           title="Submit a suspicious taker"
-          description="Upload the Binance Share-Profile QR, pick a reason, and add any evidence you have. The report is published to the community registry immediately."
+          description="Upload the Bybit Share-Profile QR, pick a reason, and add any evidence you have. The report is published to the community registry immediately."
         />
 
         <Reveal>

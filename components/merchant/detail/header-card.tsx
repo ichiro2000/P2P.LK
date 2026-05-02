@@ -36,8 +36,8 @@ export type MerchantHeaderData = {
   trustScore: number;
 };
 
-function binanceUrl(id: string) {
-  return `https://c2c.binance.com/en/advertiserDetail?advertiserNo=${encodeURIComponent(id)}`;
+function bybitUrl(id: string) {
+  return `https://www.bybit.com/fiat/trade/otc/profile/${encodeURIComponent(id)}`;
 }
 
 export function MerchantHeaderCard({ m }: { m: MerchantHeaderData }) {
@@ -124,13 +124,13 @@ export function MerchantHeaderCard({ m }: { m: MerchantHeaderData }) {
               fiat={m.fiat}
             />
             <a
-              href={binanceUrl(m.id)}
+              href={bybitUrl(m.id)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/50 px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary"
             >
               <ExternalLink className="h-3.5 w-3.5" strokeWidth={2} />
-              View on Binance
+              View on Bybit
             </a>
           </div>
         </div>
