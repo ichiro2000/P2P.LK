@@ -19,7 +19,11 @@ export function ExchangeSwitch({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "hidden sm:inline-flex items-center rounded-md border border-border bg-card/50 p-0.5 text-[11px] font-medium",
+        // Visible at every viewport — even narrow phones — because the
+        // switcher is the primary way users hop between deployments and
+        // hiding it on mobile defeats the purpose. Compact 10px text keeps
+        // it from crowding the rest of the topbar on small screens.
+        "inline-flex items-center rounded-md border border-border bg-card/50 p-0.5 text-[10px] sm:text-[11px] font-medium",
         className,
       )}
       role="tablist"

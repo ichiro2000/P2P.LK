@@ -186,7 +186,11 @@ export function normalizeAd(item: BybitItem): NormalizedAd {
       color: undefined,
     })),
     merchant: {
-      id: item.userId,
+      // Bybit's `userMaskId` (the public `s...` token) is what
+      // `bybit.com/en/p2p/profile/<id>/...` URLs expect. Fall back to the
+      // numeric `userId` for the rare ad that omits it (only really happens
+      // on placeholder rows during a Bybit rollout).
+      id: item.userMaskId || item.userId,
       name: item.nickName,
       isMerchant,
       // Bybit doesn't expose Binance-style userIdentity / userGrade / vipLevel.

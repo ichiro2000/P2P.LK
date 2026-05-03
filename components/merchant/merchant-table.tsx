@@ -39,9 +39,14 @@ type SortKey =
   | "avgReleaseSec"
   | "lastSeenTs";
 
-/** Build the Bybit public advertiser URL from a userId. */
-function bybitAdvertiserUrl(id: string): string {
-  return `https://www.bybit.com/fiat/trade/otc/profile/${encodeURIComponent(id)}`;
+/** Build the Bybit public advertiser URL.
+ *  `id` here is Bybit's `userMaskId` (the `s...` token), which is what their
+ *  profile route uses — the numeric `userId` shown in API responses doesn't
+ *  resolve in the public URL. */
+function bybitAdvertiserUrl(id: string, asset: string, fiat: string): string {
+  return `https://www.bybit.com/en/p2p/profile/${encodeURIComponent(
+    id,
+  )}/${encodeURIComponent(asset)}/${encodeURIComponent(fiat)}/item`;
 }
 
 /** Compact the Bybit pay-method labels for a narrow badge. */
@@ -233,7 +238,7 @@ function MerchantRowCmp({
                 <span className="truncate">{m.name}</span>
               </Link>
               <a
-                href={bybitAdvertiserUrl(m.id)}
+                href={bybitAdvertiserUrl(m.id, asset, fiat)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-primary"

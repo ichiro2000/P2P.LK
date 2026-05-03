@@ -36,8 +36,10 @@ export type MerchantHeaderData = {
   trustScore: number;
 };
 
-function bybitUrl(id: string) {
-  return `https://www.bybit.com/fiat/trade/otc/profile/${encodeURIComponent(id)}`;
+function bybitUrl(id: string, asset: string, fiat: string) {
+  return `https://www.bybit.com/en/p2p/profile/${encodeURIComponent(
+    id,
+  )}/${encodeURIComponent(asset)}/${encodeURIComponent(fiat)}/item`;
 }
 
 export function MerchantHeaderCard({ m }: { m: MerchantHeaderData }) {
@@ -124,7 +126,7 @@ export function MerchantHeaderCard({ m }: { m: MerchantHeaderData }) {
               fiat={m.fiat}
             />
             <a
-              href={bybitUrl(m.id)}
+              href={bybitUrl(m.id, m.asset, m.fiat)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/50 px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary"

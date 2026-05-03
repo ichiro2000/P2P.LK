@@ -16,7 +16,12 @@ export type BybitItem = {
   id: string;
   /** "0" = bid (publisher buys USDT), "1" = ask (publisher sells USDT) */
   side: number | string;
+  /** Numeric internal id, e.g. "52401079". Useful for joins but NOT for URLs. */
   userId: string;
+  /** The public `s...` token Bybit uses in profile URLs, e.g.
+   *  "s53bce2057f9933d5b7ba27cbc054caf2". This is what
+   *  `bybit.com/en/p2p/profile/{userMaskId}/{asset}/{fiat}/item` expects. */
+  userMaskId?: string;
   accountId?: string;
   nickName: string;
   tokenId: string;

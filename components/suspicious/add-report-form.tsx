@@ -300,7 +300,7 @@ export function AddReportForm() {
                       void runServerLookup(e.target.value.trim());
                     }
                   }}
-                  placeholder="https://www.bybit.com/fiat/trade/otc/profile/…"
+                  placeholder="https://www.bybit.com/en/p2p/profile/…/USDT/LKR/item"
                 />
               </div>
             )}
