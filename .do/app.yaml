@@ -6,25 +6,40 @@
 #   main  → app `p2p-lk`        → https://p2p.lk
 #   bybit → app `p2p-lk-bybit`  → https://p2p-lk-bybit-*.ondigitalocean.app
 #
-# v1 is web-service-only — no Postgres, no ingest worker. That means the
-# live markets, arbitrage, merchants and liquidity pages all work (they
-# hit Bybit's public API directly), but the historical / risk / reports
-# pages render empty until a database is attached. Adding the DB later is
-# a one-shot via the dashboard or by un-commenting the `databases:` and
-# `workers:` blocks below and pushing.
+# This spec provisions, in one update:
+#   databases.db    — NEW DigitalOcean Managed Postgres cluster (production, 1GB)
+#   services.web    — Next.js app (public HTTP)
+#   workers.ingest  — long-running snapshot worker (every 5 min)
 #
-# Deploy:
-#   doctl apps create --spec .do/app.yaml
+# DATABASE_URL is auto-wired from the attached cluster — nothing to paste.
 #
-# Update on push (when DO auto-deploy is on, this is automatic):
+# Update on the live app:
 #   doctl apps update <app-id> --spec .do/app.yaml
+#
+# First-time DB provisioning takes ~3–5 min; the web/ingest components
+# wait for the cluster to come up before starting.
 
 name: p2p-lk-bybit
 region: sfo3
 features:
   - buildpack-stack=ubuntu-22
 
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    production: true
+    cluster_name: p2p-lk-bybit-db
+    size: db-s-1vcpu-1gb
+    num_nodes: 1
+    db_name: defaultdb
+    db_user: doadmin
+
+# App-level envs — injected into every component.
 envs:
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    value: ${db.DATABASE_URL}
   - key: NODE_ENV
     scope: RUN_TIME
     value: production
@@ -61,3 +76,19 @@ services:
       timeout_seconds: 10
       success_threshold: 1
       failure_threshold: 5
+
+workers:
+  # Long-running scheduler: ticks the ingest every 5 min. Each tick fetches
+  # a deep sweep of USDT/LKR ads on both sides from Bybit's public API and
+  # writes a snapshot row + per-merchant rows. Seeds the historical / risk /
+  # reports pages.
+  - name: ingest
+    git:
+      repo_clone_url: https://github.com/ichiro2000/P2P.LK.git
+      branch: bybit
+    source_dir: /
+    environment_slug: node-js
+    build_command: npm ci
+    run_command: tsx scripts/ingest.ts --loop --every=300
+    instance_count: 1
+    instance_size_slug: basic-xxs
