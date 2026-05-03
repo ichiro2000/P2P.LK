@@ -75,6 +75,12 @@ envs:
   - key: PLAYWRIGHT_BROWSERS_PATH
     scope: RUN_AND_BUILD_TIME
     value: /ms-playwright
+  # URL of the sister Bybit deployment — drives the topbar's
+  # Binance/Bybit switcher tab. Bybit site is on the `bybit` branch,
+  # deployed as the `p2p-lk-bybit` DO app.
+  - key: NEXT_PUBLIC_OTHER_EXCHANGE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://p2p-lk-bybit-nf2vq.ondigitalocean.app
 
 services:
   # Web is built from /Dockerfile — we need Debian's chromium in the image
