@@ -1,94 +1,52 @@
-# DigitalOcean App Platform spec for P2P.LK
+# DigitalOcean App Platform spec for P2P.LK — Bybit deployment.
 #
-# Provisions, in one command, everything we need:
-#   databases.db — NEW DigitalOcean Managed Postgres cluster (production, 1GB)
-#   services.web — Next.js app (public HTTP)
-#   workers.ingest — long-running worker ticking every 5 minutes
+# This branch (`bybit`) and the `main` branch (Binance) live in the same
+# GitHub repo (ichiro2000/P2P.LK) but ship as two separate DO apps:
 #
-# The DATABASE_URL for both components is auto-wired from the attached
-# cluster. Nothing to paste; no secret to configure.
+#   main  → app `p2p-lk`        → https://p2p.lk
+#   bybit → app `p2p-lk-bybit`  → https://p2p-lk-bybit-*.ondigitalocean.app
+#
+# v1 is web-service-only — no Postgres, no ingest worker. That means the
+# live markets, arbitrage, merchants and liquidity pages all work (they
+# hit Bybit's public API directly), but the historical / risk / reports
+# pages render empty until a database is attached. Adding the DB later is
+# a one-shot via the dashboard or by un-commenting the `databases:` and
+# `workers:` blocks below and pushing.
 #
 # Deploy:
-#   doctl auth init                         # one-time
-#   doctl apps create --spec .do/app.yaml   # creates cluster + app
+#   doctl apps create --spec .do/app.yaml
 #
-# Or Dashboard → Apps → Create App → From source → paste this file when
-# prompted to override the "App Spec".
-#
-# Provisioning the Managed Postgres cluster takes 3–5 minutes on first run;
-# the app components wait for it to come up before starting.
+# Update on push (when DO auto-deploy is on, this is automatic):
+#   doctl apps update <app-id> --spec .do/app.yaml
 
-name: p2p-lk
+name: p2p-lk-bybit
 region: sfo3
 features:
   - buildpack-stack=ubuntu-22
 
-# Custom domains. DNS is managed by Cloudflare (external to DO), so we
-# omit the `zone` field — DO will verify ownership via CNAME lookup and
-# issue Let's Encrypt certs, but won't try to manage DNS records itself.
-#
-# Cloudflare setup required on your end:
-#   1. SSL/TLS → Overview → set to "Full (strict)"
-#      (Flexible causes a redirect loop with DO's HTTP→HTTPS enforcement)
-#   2. CNAME p2p.lk     → p2p-lk-n5mrd.ondigitalocean.app
-#      CNAME www.p2p.lk → p2p-lk-n5mrd.ondigitalocean.app
-#      Temporarily set BOTH to "DNS only" (grey cloud) so DO can run its
-#      HTTP-01 cert challenge. Once the cert is issued (~2–5 min), flip
-#      them back to "Proxied" (orange cloud).
-domains:
-  - domain: p2p.lk
-    type: PRIMARY
-  - domain: www.p2p.lk
-    type: ALIAS
-
-databases:
-  - name: db
-    engine: PG
-    version: "16"
-    production: true
-    cluster_name: p2p-lk-db
-    size: db-s-1vcpu-1gb
-    num_nodes: 1
-    db_name: defaultdb
-    db_user: doadmin
-
-# App-level envs — injected into every component.
-# DATABASE_URL pulls the direct-connection URL from the attached cluster;
-# it's already SSL (sslmode=require) and correctly scoped to the app's
-# trusted-sources firewall rule.
-#
-# If later on you want to add a Transaction connection pool (recommended
-# once traffic grows), create one in the DB dashboard and override
-# DATABASE_URL in Settings → App-Level Env Vars (mark it SECRET + Encrypt).
 envs:
-  - key: DATABASE_URL
-    scope: RUN_TIME
-    value: ${db.DATABASE_URL}
   - key: NODE_ENV
     scope: RUN_TIME
     value: production
-  # Pinning the Playwright browser cache to an absolute path so Playwright
-  # finds the Chromium the base image pre-installed at /ms-playwright/.
-  # DO App Platform overrides the container cwd to /workspace and ignores
-  # some Dockerfile `ENV` values, so setting this at the spec level is
-  # the only way to guarantee the resolver's browser launch succeeds.
+  # Pinned per the upstream Binance spec — the Dockerfile's Playwright
+  # browser cache lives at /ms-playwright. The Bybit build doesn't actually
+  # use Playwright (suspicious-merchant fetch is stubbed), but the base
+  # image is still Playwright's, so leaving this in keeps the Chromium
+  # resolver code happy if it's ever re-enabled.
   - key: PLAYWRIGHT_BROWSERS_PATH
     scope: RUN_AND_BUILD_TIME
     value: /ms-playwright
+  # URL of the sister Binance deployment — drives the topbar's
+  # Binance/Bybit switcher tab. Live Binance site is at p2p.lk.
+  - key: NEXT_PUBLIC_OTHER_EXCHANGE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: https://p2p.lk
 
 services:
-  # Web is built from /Dockerfile — we need Debian's chromium in the image
-  # so /api/suspicious/lookup can follow Binance's WAF-protected QR
-  # short-links via playwright-core. The buildpack can't apt-install
-  # browser binaries, so a Dockerfile is the only clean option here.
-  #
-  # basic-xs (1 vCPU / 1 GB) is tight with Chromium: ~250 MB peak per
-  # resolve. Upgrade to basic-s if concurrent QR resolves start OOMing
-  # the container.
   - name: web
     git:
       repo_clone_url: https://github.com/ichiro2000/P2P.LK.git
-      branch: main
+      branch: bybit
     source_dir: /
     dockerfile_path: Dockerfile
     http_port: 3000
@@ -103,18 +61,3 @@ services:
       timeout_seconds: 10
       success_threshold: 1
       failure_threshold: 5
-
-workers:
-  # Long-running scheduler: runs the ingest every 5 minutes. Cheaper and
-  # simpler than wiring an external cron, and the --loop script is already
-  # hardened for this (per-market error isolation, SIGINT handling).
-  - name: ingest
-    git:
-      repo_clone_url: https://github.com/ichiro2000/P2P.LK.git
-      branch: main
-    source_dir: /
-    environment_slug: node-js
-    build_command: npm ci
-    run_command: tsx scripts/ingest.ts --loop --every=300
-    instance_count: 1
-    instance_size_slug: basic-xxs
