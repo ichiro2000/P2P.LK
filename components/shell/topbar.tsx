@@ -3,6 +3,7 @@
 import { Activity } from "lucide-react";
 import { Brand } from "./brand";
 import { MobileNav } from "./mobile-nav";
+import { ExchangeSwitch } from "./exchange-switch";
 import { LiveClock } from "@/components/common/live-clock";
 
 export function Topbar({
@@ -36,6 +37,7 @@ export function Topbar({
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <ExchangeSwitch />
           {children}
           <div className="hidden sm:flex items-center gap-2 rounded-md border border-border bg-card/50 px-2.5 py-1.5 text-[11px] text-muted-foreground">
             <Activity className="h-3 w-3 text-primary" strokeWidth={2} />
