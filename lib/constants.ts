@@ -49,18 +49,24 @@ export function getFiat(code: string): FiatOption | undefined {
 /**
  * The only pay-method identifier we accept on this build. Discovered
  * empirically from Bybit's `/fiat/otc/item/online` response for USD: pay-id
- * `"416"` is "Wise". Everything else (Zelle, Cash App, gift cards, RUB rails)
- * is out of scope for this deployment.
+ * `"78"` is what Bybit's web UI labels "Wise" — confirmed by cross-checking
+ * the advertiser list at `bybit.com/en/p2p/buy/USDT/USD?payment=Wise`.
+ *
+ * Note: Bybit also has pay-id `"416"` whose ads occasionally include "Wise"
+ * in the merchant nickname (e.g. "Fast+safe-Wise"), but the prices on that
+ * rail cluster around $0.99 vs the $1.01-$1.02 visible in the UI's "Wise"
+ * filter. `416` is a different (cheaper) rail; the UI doesn't surface it
+ * under the Wise label, and we don't either.
  *
  * Naming kept as `BANK_TRANSFER_*` so the wider codebase (filter bar, ingest,
  * reports) does not need a churn rename for what is conceptually still a
  * "single bank-style payment rail". The label is what users see.
  */
-export const BANK_TRANSFER_IDS = ["416"] as const;
+export const BANK_TRANSFER_IDS = ["78"] as const;
 export type BankTransferId = (typeof BANK_TRANSFER_IDS)[number];
 
 export const BANK_TRANSFER_OPTIONS: { id: BankTransferId; label: string }[] = [
-  { id: "416", label: "Wise (USD)" },
+  { id: "78", label: "Wise (USD)" },
 ];
 
 /**

@@ -85,8 +85,9 @@ services:
 workers:
   # Long-running scheduler: ticks the ingest every 5 min. Each tick fetches
   # a deep sweep of USDT/USD ads on both sides via the Wise pay-method id
-  # (416) from Bybit's public API and writes a snapshot row + per-merchant
-  # rows. Seeds the historical, patterns, risk and reports pages.
+  # ("78" — confirmed against Bybit's UI Wise filter) from Bybit's public
+  # API and writes a snapshot row + per-merchant rows. Seeds the historical,
+  # patterns, risk and reports pages.
   - name: ingest
     git:
       repo_clone_url: https://github.com/ichiro2000/P2P.LK.git

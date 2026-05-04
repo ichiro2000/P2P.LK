@@ -156,13 +156,13 @@ export async function fetchAdsDeep(
  */
 const PAY_METHOD_FALLBACK_NAME: Record<string, string> = {
   "14": "Bank Transfer",
-  "416": "Wise",
+  "78": "Wise",
+  "416": "Wise (alt rail)",
   "64": "ZELLE",
   "40": "Cash App",
   "11": "PayPal",
   "37": "Revolut",
   "121": "SEPA",
-  "78": "ACH",
   "87": "Skrill",
   "96": "Apple Pay",
 };
