@@ -37,6 +37,11 @@ export async function fetchBybitP2P(
   filters: SearchFilters,
   opts?: { revalidate?: number; signal?: AbortSignal },
 ): Promise<BybitItem[]> {
+  // Bybit's `authMaker=true` is the public "Verified merchants only" toggle —
+  // narrows the result set to advertisers Bybit has authenticated as a
+  // merchant (the diamond badge in the UI), filtering out personal-account
+  // publishers. We forward this whenever the caller passes
+  // `publisherType: "merchant"`.
   const body = {
     userId: 0,
     tokenId: filters.asset,
@@ -46,7 +51,7 @@ export async function fetchBybitP2P(
     size: String(filters.rows ?? 20),
     page: String(filters.page ?? 1),
     amount: filters.transAmount ?? "",
-    authMaker: false,
+    authMaker: filters.publisherType === "merchant",
     canTrade: false,
   };
 

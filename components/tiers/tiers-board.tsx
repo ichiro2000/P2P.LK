@@ -26,11 +26,24 @@ import type { NormalizedAd, TradeType } from "@/lib/types";
 
 type Side = TradeType;
 
-export function TiersBoard({ initial }: { initial: TiersResponse }) {
-  const url = useMemo(
-    () => `/api/tiers?asset=${initial.asset}&fiat=${initial.fiat}`,
-    [initial.asset, initial.fiat],
-  );
+export function TiersBoard({
+  initial,
+  merchantsOnly = true,
+}: {
+  initial: TiersResponse;
+  /** When true, the polling URL passes merchantType=merchant so live refreshes
+   *  stay locked to verified merchants. Defaults to true to match the page's
+   *  default. */
+  merchantsOnly?: boolean;
+}) {
+  const url = useMemo(() => {
+    const p = new URLSearchParams({
+      asset: initial.asset,
+      fiat: initial.fiat,
+    });
+    if (!merchantsOnly) p.set("merchantType", "all");
+    return `/api/tiers?${p.toString()}`;
+  }, [initial.asset, initial.fiat, merchantsOnly]);
   const { data, loading, error, lastUpdated, refetch } =
     usePolling<TiersResponse>(url, {
       initialData: initial,

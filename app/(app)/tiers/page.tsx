@@ -3,7 +3,8 @@ import { SectionHeader } from "@/components/common/section-header";
 import { LiveDot } from "@/components/common/live-dot";
 import { TiersBoard } from "@/components/tiers/tiers-board";
 import { Empty } from "@/components/common/empty";
-import { CloudOff } from "lucide-react";
+import { CloudOff, ShieldCheck, Users2 } from "lucide-react";
+import Link from "next/link";
 import {
   ASSET,
   FIAT,
@@ -40,6 +41,7 @@ async function buildBlock(
   amount: number,
   side: TradeType,
   payTypes: string[],
+  merchantsOnly: boolean,
 ): Promise<TierBlock> {
   let ads: NormalizedAd[] = [];
   try {
@@ -48,6 +50,7 @@ async function buildBlock(
       fiat: FIAT.code,
       tradeType: side,
       payTypes,
+      publisherType: merchantsOnly ? "merchant" : null,
       transAmount: String(amount),
       rows: 20,
       page: 1,
@@ -67,15 +70,21 @@ async function buildBlock(
   };
 }
 
-export default async function TiersPage() {
+type SP = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function TiersPage({ searchParams }: { searchParams: SP }) {
+  const sp = await searchParams;
+  const merchantsOnly =
+    String(sp.merchantType ?? "merchant").toLowerCase() !== "all";
+
   const payTypes = resolveBankPayTypes("");
   let initial: TiersResponse | null = null;
   try {
     const buy = await Promise.all(
-      TIER_AMOUNTS_USD.map((a) => buildBlock(a, "BUY", payTypes)),
+      TIER_AMOUNTS_USD.map((a) => buildBlock(a, "BUY", payTypes, merchantsOnly)),
     );
     const sell = await Promise.all(
-      TIER_AMOUNTS_USD.map((a) => buildBlock(a, "SELL", payTypes)),
+      TIER_AMOUNTS_USD.map((a) => buildBlock(a, "SELL", payTypes, merchantsOnly)),
     );
     initial = {
       asset: ASSET,
@@ -87,7 +96,7 @@ export default async function TiersPage() {
     initial = null;
   }
 
-  const subtitle = `${ASSET} / ${FIAT.code} · ${PAYMENT_LABEL}`;
+  const subtitle = `${ASSET} / ${FIAT.code} · ${PAYMENT_LABEL}${merchantsOnly ? " · verified" : ""}`;
 
   return (
     <>
@@ -102,8 +111,10 @@ export default async function TiersPage() {
           description={`Best Bybit P2P rates for the most common ticket sizes — $10, $50, $100, $300, $500 and $1,000 — for both directions. Switch the tab to see who has the best price for what you actually want to do. Refreshed every 30s.`}
         />
 
+        <MerchantToggle current={merchantsOnly ? "merchant" : "all"} />
+
         {initial ? (
-          <TiersBoard initial={initial} />
+          <TiersBoard initial={initial} merchantsOnly={merchantsOnly} />
         ) : (
           <Empty
             icon={CloudOff}
@@ -114,5 +125,39 @@ export default async function TiersPage() {
         )}
       </div>
     </>
+  );
+}
+
+function MerchantToggle({ current }: { current: "merchant" | "all" }) {
+  const merchantHref = "/tiers";
+  const allHref = "/tiers?merchantType=all";
+
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/60 p-1 text-[11px]">
+      <Link
+        href={merchantHref}
+        prefetch={false}
+        className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 transition-colors ${
+          current === "merchant"
+            ? "bg-primary/15 text-foreground"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        <ShieldCheck className="h-3 w-3" strokeWidth={2} />
+        Verified merchants only
+      </Link>
+      <Link
+        href={allHref}
+        prefetch={false}
+        className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 transition-colors ${
+          current === "all"
+            ? "bg-primary/15 text-foreground"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        <Users2 className="h-3 w-3" strokeWidth={2} />
+        All publishers
+      </Link>
+    </div>
   );
 }

@@ -35,6 +35,7 @@ async function fetchTier(
   payTypes: string[],
   amount: number,
   side: TradeType,
+  merchantsOnly: boolean,
 ): Promise<TierBlock> {
   // Bybit's `amount` filter narrows to ads whose [minAmount, maxAmount] window
   // covers this ticket. 20 rows is the page cap; for these small-fiat books
@@ -47,6 +48,7 @@ async function fetchTier(
       fiat,
       tradeType: side,
       payTypes,
+      publisherType: merchantsOnly ? "merchant" : null,
       transAmount: String(amount),
       rows: 20,
       page: 1,
@@ -74,15 +76,24 @@ export async function GET(req: NextRequest) {
   const asset = (sp.get("asset") ?? ASSET).toUpperCase();
   const fiat = (sp.get("fiat") ?? FIAT.code).toUpperCase();
   const payTypes = resolveBankPayTypes(sp.get("payType") ?? "");
+  // `merchantType=all` opens the filter to personal publishers; default is
+  // verified-merchants-only so the leaderboard is dominated by counterparties
+  // Bybit has authenticated.
+  const merchantsOnly =
+    (sp.get("merchantType") ?? "merchant").toLowerCase() !== "all";
 
   // 6 tiers × 2 sides = 12 parallel Bybit calls. Bybit's public endpoint
   // accepts these without rate-limiting at this volume in our testing; if it
   // ever does, drop to sequential per side.
   const buyTiers = await Promise.all(
-    TIER_AMOUNTS_USD.map((amt) => fetchTier(asset, fiat, payTypes, amt, "BUY")),
+    TIER_AMOUNTS_USD.map((amt) =>
+      fetchTier(asset, fiat, payTypes, amt, "BUY", merchantsOnly),
+    ),
   );
   const sellTiers = await Promise.all(
-    TIER_AMOUNTS_USD.map((amt) => fetchTier(asset, fiat, payTypes, amt, "SELL")),
+    TIER_AMOUNTS_USD.map((amt) =>
+      fetchTier(asset, fiat, payTypes, amt, "SELL", merchantsOnly),
+    ),
   );
 
   const body: TiersResponse = {
