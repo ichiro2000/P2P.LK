@@ -6,7 +6,7 @@ import { LiveDot } from "@/components/common/live-dot";
 import { MarketStar } from "@/components/workspace/star-button";
 import { fetchBothSides, normalizeAds } from "@/lib/bybit";
 import { buildMarket } from "@/lib/analytics";
-import { ASSET, FIAT, resolveBankPayTypes } from "@/lib/constants";
+import { ASSET, FIAT, PAYMENT_LABEL, resolveBankPayTypes } from "@/lib/constants";
 import { Empty } from "@/components/common/empty";
 import { CloudOff } from "lucide-react";
 
@@ -49,7 +49,7 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
     snapshotOrNull = null;
   }
 
-  const subtitle = `${filters.asset} / ${filters.fiat} · ${FIAT.name}`;
+  const subtitle = `${filters.asset} / ${filters.fiat} · ${PAYMENT_LABEL}`;
 
   return (
     <>
@@ -61,8 +61,8 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         <SectionHeader
           kicker="Market overview"
-          title={`${FIAT.flag} USDT on Bybit P2P · LKR bank transfers`}
-          description="Top-of-book prices, round-trip spread, live depth and the advertisements you can actually trade against — scoped to Sri Lankan bank transfers. Refreshed every 20 seconds."
+          title={`${FIAT.flag} USDT on Bybit P2P · ${PAYMENT_LABEL} (USD)`}
+          description={`Top-of-book prices, round-trip spread, live depth and the advertisements you can actually trade against — scoped to ${PAYMENT_LABEL} USD transfers. Refreshed every 20 seconds.`}
         />
 
         <FilterBar initial={filters} />

@@ -20,7 +20,7 @@ export const revalidate = 30;
 export const metadata = {
   title: "Merchants",
   description:
-    "Counterparty analytics for Sri Lankan bank-transfer P2P on Bybit.",
+    "Counterparty analytics for the USD / Wise USDT P2P book on Bybit.",
 };
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
@@ -86,7 +86,7 @@ export default async function MerchantsPage({
         <SectionHeader
           kicker="Merchant analytics"
           title={`Who's making the market in ${ASSET}/${FIAT.code}?`}
-          description="Every counterparty we've seen on the LKR book, ranked by a composite trust score built from completion rate, order volume and release time. Toggle Active Now to filter to merchants currently listing."
+          description="Every counterparty we've seen on the Wise USD book, ranked by a composite trust score built from completion rate, order volume and release time. Toggle Active Now to filter to merchants currently listing."
         />
 
         <FilterBar initial={filters} />

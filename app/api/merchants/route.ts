@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const asset = (sp.get("asset") ?? "USDT").toUpperCase();
-  const fiat = (sp.get("fiat") ?? "LKR").toUpperCase();
+  const fiat = (sp.get("fiat") ?? "USD").toUpperCase();
   const rawPay = sp.get("payTypes") ?? "";
   const paySelection = rawPay.split(",").map((s) => s.trim()).filter(Boolean);
   const payTypes =

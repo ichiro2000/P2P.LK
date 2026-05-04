@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const asset = (sp.get("asset") ?? "USDT").toUpperCase();
-  const fiat = (sp.get("fiat") ?? "LKR").toUpperCase();
+  const fiat = (sp.get("fiat") ?? "USD").toUpperCase();
   const rangeKey = (sp.get("range") ?? "24h") as RangeKey;
   const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
 

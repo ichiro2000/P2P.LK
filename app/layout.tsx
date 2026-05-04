@@ -18,18 +18,18 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "P2P.LK — Sri Lankan Bybit P2P Analytics",
-    template: "%s · P2P.LK",
+    default: "P2P · Wise — Bybit USD/Wise P2P Analytics",
+    template: "%s · P2P·Wise",
   },
   description:
-    "Live Bybit P2P analytics for USDT/LKR bank transfers — prices, spread, merchant trust, liquidity and anomaly detection.",
-  applicationName: "P2P.LK",
+    "Live Bybit P2P analytics for USDT/USD via Wise — prices, spread, merchant trust, liquidity, top sellers per ticket size and anomaly detection.",
+  applicationName: "P2P·Wise",
   keywords: [
     "Bybit P2P",
-    "LKR USDT",
-    "Sri Lanka crypto",
-    "bank transfer",
-    "merchant analytics",
+    "USD USDT",
+    "Wise crypto",
+    "Wise USDT",
+    "P2P merchant analytics",
   ],
 };
 

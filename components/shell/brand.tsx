@@ -28,7 +28,7 @@ export function Brand({
         <div className="flex items-baseline font-mono text-[15px] font-semibold tracking-tight">
           <span className="text-foreground">P2P</span>
           <span className="mx-[3px] inline-block h-1 w-1 translate-y-[-2px] rounded-full bg-primary" />
-          <span className="text-muted-foreground">LK</span>
+          <span className="text-muted-foreground">WISE</span>
         </div>
       )}
     </div>

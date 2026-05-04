@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const asset = (sp.get("asset") ?? "USDT").toUpperCase();
-  const fiat = (sp.get("fiat") ?? "LKR").toUpperCase();
+  const fiat = (sp.get("fiat") ?? "USD").toUpperCase();
   const rows = Math.min(20, Math.max(5, Number(sp.get("rows") ?? 20)));
   // Single-value selection from the UI (?payTypes=BANK). Comma separation
   // still supported so external scripts can pass lists.

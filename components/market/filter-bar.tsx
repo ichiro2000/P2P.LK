@@ -27,8 +27,8 @@ export type FilterState = {
 };
 
 /**
- * URL-backed filter bar. Product scope is fixed to USDT / LKR so only two
- * pickers remain: which specific bank identifier to scope to, and whether
+ * URL-backed filter bar. Product scope is fixed to USDT / USD via Wise so only
+ * two pickers remain: which specific rail identifier to scope to, and whether
  * to restrict to verified merchants.
  */
 export function FilterBar({
@@ -64,9 +64,9 @@ export function FilterBar({
             immediate context without a 1-option dropdown. */}
         <LockedChip label="Asset" value={ASSET} />
 
-        {/* Fiat is locked to LKR — same treatment. */}
+        {/* Fiat is locked to USD — same treatment. */}
         <LockedChip
-          label="Country"
+          label="Currency"
           value={
             <span className="inline-flex items-center gap-1.5 font-mono">
               <span>{FIAT.flag}</span>
@@ -75,21 +75,21 @@ export function FilterBar({
           }
         />
 
-        <FilterField label="Bank rail">
+        <FilterField label="Payment rail">
           <Select
             value={initial.payType || ""}
             onValueChange={(v) => update({ payType: v ?? "" })}
           >
             <SelectTrigger className="w-full min-w-[200px]">
-              <SelectValue placeholder="All bank transfers">
+              <SelectValue placeholder="Wise (USD)">
                 {(val) => {
                   const opt = BANK_TRANSFER_OPTIONS.find((o) => o.id === val);
-                  return opt?.label ?? "All bank transfers";
+                  return opt?.label ?? "Wise (USD)";
                 }}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All bank transfers</SelectItem>
+              <SelectItem value="">Wise (USD)</SelectItem>
               {BANK_TRANSFER_OPTIONS.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.label}
@@ -130,7 +130,7 @@ export function FilterBar({
 }
 
 function saveLabel(f: FilterState): string {
-  const parts = ["USDT/LKR"];
+  const parts = ["USDT/USD"];
   const rail = BANK_TRANSFER_OPTIONS.find((o) => o.id === f.payType)?.label;
   if (rail) parts.push(rail);
   if (f.merchantType === "merchant") parts.push("merchants");

@@ -42,7 +42,7 @@ export function Sidebar({ className }: { className?: string }) {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
             </span>
-            <span className="text-muted-foreground">Live · Bybit P2P</span>
+            <span className="text-muted-foreground">Live · Bybit · Wise USD</span>
           </div>
           <div className="mt-1 text-[10px] leading-snug text-muted-foreground/70">
             Data refreshed every 20 seconds.

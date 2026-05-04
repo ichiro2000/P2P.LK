@@ -81,7 +81,7 @@ export default async function ReportsPage({
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         <SectionHeader
           kicker="Reports"
-          title="Exportable snapshots of the LKR bank market"
+          title="Exportable snapshots of the USD / Wise market"
           description="Pick a report type, set your filters, and download a CSV you can paste into a spreadsheet or share with a counterparty. Daily recap reads the ingested time-series; merchant scorecards run against the live feed."
           right={kind === "recap" ? <RangeTabs value={range} /> : null}
         />

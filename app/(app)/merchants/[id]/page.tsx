@@ -102,7 +102,7 @@ export default async function MerchantDetailPage({
           <Empty
             icon={UserX}
             title="We haven't seen this merchant"
-            description={`No snapshots for advertiser ${id} on ${asset}/${fiat}. They may have never listed on LKR bank transfers, or the ID is wrong.`}
+            description={`No snapshots for advertiser ${id} on ${asset}/${fiat}. They may have never listed on Wise USD, or the ID is wrong.`}
             tone="warn"
             action={
               <Link

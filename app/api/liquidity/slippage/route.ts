@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const asset = (sp.get("asset") ?? "USDT").toUpperCase();
-  const fiat = (sp.get("fiat") ?? "LKR").toUpperCase();
+  const fiat = (sp.get("fiat") ?? "USD").toUpperCase();
   const sideParam = (sp.get("side") ?? "SELL").toUpperCase();
   const side: TradeType = sideParam === "BUY" ? "BUY" : "SELL";
   const amount = Number(sp.get("amount") ?? 0);

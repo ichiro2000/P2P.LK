@@ -1,25 +1,30 @@
-# DigitalOcean App Platform spec for P2P.LK — Bybit deployment.
+# DigitalOcean App Platform spec — Bybit USD/Wise deployment.
 #
-# This branch (`bybit`) and the `main` branch (Binance) live in the same
-# GitHub repo (ichiro2000/P2P.LK) but ship as two separate DO apps:
+# This branch (`bybit-wise`) lives in the same GitHub repo (ichiro2000/P2P.LK)
+# as the LKR (`bybit`) and Binance (`main`) deployments, and ships as a third
+# separate DO app:
 #
-#   main  → app `p2p-lk`        → https://p2p.lk
-#   bybit → app `p2p-lk-bybit`  → https://p2p-lk-bybit-*.ondigitalocean.app
+#   main         → app `p2p-lk`             → https://p2p.lk
+#   bybit        → app `p2p-lk-bybit`       → Bybit USDT/LKR
+#   bybit-wise   → app `p2p-lk-bybit-wise`  → Bybit USDT/USD via Wise   (this)
 #
 # This spec provisions, in one update:
-#   databases.db    — NEW DigitalOcean Managed Postgres cluster (production, 1GB)
+#   databases.db    — fresh DigitalOcean Managed Postgres cluster (production, 1GB)
 #   services.web    — Next.js app (public HTTP)
 #   workers.ingest  — long-running snapshot worker (every 5 min)
 #
 # DATABASE_URL is auto-wired from the attached cluster — nothing to paste.
 #
-# Update on the live app:
+# First-time create (run from a checkout on the bybit-wise branch):
+#   doctl apps create --spec .do/app.yaml
+#
+# Subsequent updates:
 #   doctl apps update <app-id> --spec .do/app.yaml
 #
-# First-time DB provisioning takes ~3–5 min; the web/ingest components
-# wait for the cluster to come up before starting.
+# First-time DB provisioning takes ~3–5 min; the web/ingest components wait
+# for the cluster to come up before starting.
 
-name: p2p-lk-bybit
+name: p2p-lk-bybit-wise
 region: sfo3
 features:
   - buildpack-stack=ubuntu-22
@@ -29,7 +34,7 @@ databases:
     engine: PG
     version: "16"
     production: true
-    cluster_name: p2p-lk-bybit-db
+    cluster_name: p2p-lk-bybit-wise-db
     size: db-s-1vcpu-1gb
     num_nodes: 1
     db_name: defaultdb
@@ -43,25 +48,25 @@ envs:
   - key: NODE_ENV
     scope: RUN_TIME
     value: production
-  # Pinned per the upstream Binance spec — the Dockerfile's Playwright
-  # browser cache lives at /ms-playwright. The Bybit build doesn't actually
-  # use Playwright (suspicious-merchant fetch is stubbed), but the base
-  # image is still Playwright's, so leaving this in keeps the Chromium
-  # resolver code happy if it's ever re-enabled.
+  # The Dockerfile's Playwright browser cache lives at /ms-playwright. The
+  # Bybit build doesn't actively use Playwright, but the base image is
+  # Playwright's, so leaving this in keeps the Chromium resolver code happy
+  # if it's ever re-enabled.
   - key: PLAYWRIGHT_BROWSERS_PATH
     scope: RUN_AND_BUILD_TIME
     value: /ms-playwright
-  # URL of the sister Binance deployment — drives the topbar's
-  # Binance/Bybit switcher tab. Live Binance site is at p2p.lk.
+  # URL of a sister deployment — drives the topbar's exchange switcher tab.
+  # Point at the LKR Bybit fork; users coming for "the same thing in LKR" land
+  # there. Set to empty to hide the switcher.
   - key: NEXT_PUBLIC_OTHER_EXCHANGE_URL
     scope: RUN_AND_BUILD_TIME
-    value: https://p2p.lk
+    value: https://p2p-lk-bybit-nf2vq.ondigitalocean.app
 
 services:
   - name: web
     git:
       repo_clone_url: https://github.com/ichiro2000/P2P.LK.git
-      branch: bybit
+      branch: bybit-wise
     source_dir: /
     dockerfile_path: Dockerfile
     http_port: 3000
@@ -79,13 +84,13 @@ services:
 
 workers:
   # Long-running scheduler: ticks the ingest every 5 min. Each tick fetches
-  # a deep sweep of USDT/LKR ads on both sides from Bybit's public API and
-  # writes a snapshot row + per-merchant rows. Seeds the historical / risk /
-  # reports pages.
+  # a deep sweep of USDT/USD ads on both sides via the Wise pay-method id
+  # (416) from Bybit's public API and writes a snapshot row + per-merchant
+  # rows. Seeds the historical, patterns, risk and reports pages.
   - name: ingest
     git:
       repo_clone_url: https://github.com/ichiro2000/P2P.LK.git
-      branch: bybit
+      branch: bybit-wise
     source_dir: /
     environment_slug: node-js
     build_command: npm ci
