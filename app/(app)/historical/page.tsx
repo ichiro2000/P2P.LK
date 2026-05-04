@@ -105,7 +105,7 @@ export default async function HistoricalPage({
                     label="Current mid"
                     value={
                       latest?.mid != null
-                        ? formatFiat(latest.mid, symbol, 2)
+                        ? formatFiat(latest.mid, symbol, 4)
                         : "—"
                     }
                     delta={
@@ -119,12 +119,12 @@ export default async function HistoricalPage({
                     label={`${range} average`}
                     value={
                       summary?.avgMid != null
-                        ? formatFiat(summary.avgMid, symbol, 2)
+                        ? formatFiat(summary.avgMid, symbol, 4)
                         : "—"
                     }
                     footnote={
                       summary?.minMid != null && summary?.maxMid != null
-                        ? `${formatFiat(summary.minMid, symbol, 2)} – ${formatFiat(summary.maxMid, symbol, 2)}`
+                        ? `${formatFiat(summary.minMid, symbol, 4)} – ${formatFiat(summary.maxMid, symbol, 4)}`
                         : undefined
                     }
                   />

@@ -12,14 +12,24 @@ function nf(key: string, opts: Intl.NumberFormatOptions) {
   return f;
 }
 
-/** 330.50 → "330.50", 0.0123 → "0.0123". Auto-picks fraction digits. */
-export function formatPrice(n: number | null | undefined, maxFrac = 4): string {
+/**
+ * Price formatter — locked to 4 fractional digits across the app.
+ *
+ * USDT/USD via Wise quotes the spread on the third decimal (e.g. $1.012 vs
+ * $1.015), so trimming to 2 digits hides where merchants actually compete.
+ * 4 digits keeps the leaderboards distinguishable and matches the precision
+ * Bybit publishes on its own list page.
+ *
+ * `maxFrac` is kept on the signature for backwards compatibility but no
+ * longer narrows the result — anyone passing a smaller value used to get
+ * fewer digits; they now consistently get 4.
+ */
+export function formatPrice(n: number | null | undefined, _maxFrac = 4): string {
+  void _maxFrac;
   if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  const frac = abs >= 100 ? 2 : abs >= 1 ? 3 : maxFrac;
-  return nf(`p${frac}`, {
-    minimumFractionDigits: frac,
-    maximumFractionDigits: frac,
+  return nf("p4", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
   }).format(n);
 }
 
@@ -67,12 +77,17 @@ export function formatSigned(
   }).format(n);
 }
 
-/** Currency with supplied symbol: "Rs 330.50". Uses decimal style + prefix
- *  because many fiats (LKR, BDT, IDR) aren't well-supported by Intl currency. */
+/** Currency with supplied symbol: "$ 1.0125". Uses decimal style + prefix
+ *  because many fiats (LKR, BDT, IDR) aren't well-supported by Intl currency.
+ *
+ *  Default fractional digits = 4 to match Bybit's published precision on the
+ *  Wise USD book — the spread there lives below the cent. Callers that want
+ *  coarser display (e.g. depth/volume rendering) can override.
+ */
 export function formatFiat(
   n: number | null | undefined,
   symbol: string,
-  frac = 2,
+  frac = 4,
 ): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return `${symbol} ${nf(`f${frac}`, {

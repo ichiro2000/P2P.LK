@@ -52,7 +52,7 @@ export function RulesList() {
               const symbol = fiat?.symbol ?? r.fiat;
               const thresholdText =
                 meta.unit === "price"
-                  ? formatFiat(r.threshold, symbol, 2)
+                  ? formatFiat(r.threshold, symbol, 4)
                   : meta.unit === "percent"
                     ? formatPct(r.threshold, { frac: 2 })
                     : `${formatCompact(r.threshold)} ${r.asset}`;

@@ -55,7 +55,7 @@ export function SpreadWidget({ market }: { market: MarketSnapshot }) {
       <CardContent>
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-3xl font-semibold tabular-nums text-foreground leading-none">
-            {spread != null ? formatFiat(spread, symbol, 2) : "—"}
+            {spread != null ? formatFiat(spread, symbol, 4) : "—"}
           </span>
           {spreadPct != null && (
             <span
@@ -75,7 +75,7 @@ export function SpreadWidget({ market }: { market: MarketSnapshot }) {
           <span>
             Mid{" "}
             <span className="font-mono tabular-nums text-foreground/80">
-              {mid != null ? formatFiat(mid, symbol, 2) : "—"}
+              {mid != null ? formatFiat(mid, symbol, 4) : "—"}
             </span>
           </span>
           {/* Buy ads (publisher buying = retail sell context) → red.
@@ -84,7 +84,7 @@ export function SpreadWidget({ market }: { market: MarketSnapshot }) {
             Buy ads{" "}
             <span className="font-mono tabular-nums text-[color:var(--color-sell)]">
               {market.buy.bestPrice != null
-                ? formatFiat(market.buy.bestPrice, symbol, 2)
+                ? formatFiat(market.buy.bestPrice, symbol, 4)
                 : "—"}
             </span>
           </span>
@@ -92,7 +92,7 @@ export function SpreadWidget({ market }: { market: MarketSnapshot }) {
             Sell ads{" "}
             <span className="font-mono tabular-nums text-[color:var(--color-buy)]">
               {market.sell.bestPrice != null
-                ? formatFiat(market.sell.bestPrice, symbol, 2)
+                ? formatFiat(market.sell.bestPrice, symbol, 4)
                 : "—"}
             </span>
           </span>

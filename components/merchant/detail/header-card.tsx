@@ -142,7 +142,7 @@ export function MerchantHeaderCard({ m }: { m: MerchantHeaderData }) {
             label="Best buy"
             value={
               m.bestBuyPrice != null
-                ? formatFiat(m.bestBuyPrice, m.symbol, 2)
+                ? formatFiat(m.bestBuyPrice, m.symbol, 4)
                 : "—"
             }
             footnote={
@@ -155,7 +155,7 @@ export function MerchantHeaderCard({ m }: { m: MerchantHeaderData }) {
             label="Best sell"
             value={
               m.bestSellPrice != null
-                ? formatFiat(m.bestSellPrice, m.symbol, 2)
+                ? formatFiat(m.bestSellPrice, m.symbol, 4)
                 : "—"
             }
             footnote={
@@ -171,7 +171,7 @@ export function MerchantHeaderCard({ m }: { m: MerchantHeaderData }) {
           />
           <Stat
             label="Own spread"
-            value={ownSpread == null ? "—" : formatFiat(ownSpread, m.symbol, 2)}
+            value={ownSpread == null ? "—" : formatFiat(ownSpread, m.symbol, 4)}
             footnote="sell − buy on their book"
           />
           <Stat

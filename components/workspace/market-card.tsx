@@ -143,7 +143,7 @@ function PriceBlock({
           loading && "animate-pulse",
         )}
       >
-        {value != null ? formatFiat(value, symbol, 2) : "—"}
+        {value != null ? formatFiat(value, symbol, 4) : "—"}
       </div>
     </div>
   );

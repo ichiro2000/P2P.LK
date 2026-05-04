@@ -36,8 +36,8 @@ export function PriceDistribution({
           Price distribution
         </CardTitle>
         <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
-          <span>μ {μ != null ? formatFiat(μ, symbol, 2) : "—"}</span>
-          <span>σ {σ != null ? formatFiat(σ, symbol, 2) : "—"}</span>
+          <span>μ {μ != null ? formatFiat(μ, symbol, 4) : "—"}</span>
+          <span>σ {σ != null ? formatFiat(σ, symbol, 4) : "—"}</span>
         </div>
       </CardHeader>
       <CardContent>
@@ -63,7 +63,7 @@ export function PriceDistribution({
                   }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v) => formatFiat(Number(v), symbol, 2)}
+                  tickFormatter={(v) => formatFiat(Number(v), symbol, 4)}
                 />
                 <YAxis
                   tick={{
@@ -90,7 +90,7 @@ export function PriceDistribution({
                     marginBottom: 4,
                   }}
                   itemStyle={{ fontFamily: "var(--font-mono)" }}
-                  labelFormatter={(v) => formatFiat(Number(v), symbol, 2)}
+                  labelFormatter={(v) => formatFiat(Number(v), symbol, 4)}
                   formatter={(val) => [`${val} ticks`, "Frequency"]}
                 />
                 <Bar

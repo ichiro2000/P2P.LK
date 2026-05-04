@@ -166,7 +166,7 @@ export function MerchantPriceChart({
                     (min: number) => min * 0.999,
                     (max: number) => max * 1.001,
                   ]}
-                  tickFormatter={(v) => formatFiat(Number(v), symbol, 2)}
+                  tickFormatter={(v) => formatFiat(Number(v), symbol, 4)}
                 />
                 <Tooltip
                   cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }}
@@ -175,7 +175,7 @@ export function MerchantPriceChart({
                   formatter={(val, name) => {
                     const n = Number(val);
                     if (!Number.isFinite(n)) return ["—", name as string];
-                    return [formatFiat(n, symbol, 2), name as string];
+                    return [formatFiat(n, symbol, 4), name as string];
                   }}
                 />
                 <Line
@@ -277,12 +277,12 @@ export function MerchantSpreadChart({
                   axisLine={false}
                   tickLine={false}
                   width={54}
-                  tickFormatter={(v) => formatFiat(Number(v), symbol, 2)}
+                  tickFormatter={(v) => formatFiat(Number(v), symbol, 4)}
                 />
                 <Tooltip
                   {...tooltipStyles}
                   labelFormatter={(v) => shortTime(Number(v), true)}
-                  formatter={(val) => [formatFiat(Number(val), symbol, 2), "Spread"]}
+                  formatter={(val) => [formatFiat(Number(val), symbol, 4), "Spread"]}
                 />
                 <Area
                   type="monotone"

@@ -118,9 +118,9 @@ function describeRule(r: AlertRule): string {
   const sym = getFiat(r.fiat)?.symbol ?? r.fiat;
   switch (r.type) {
     case "priceAbove":
-      return `${r.asset}/${r.fiat} mid > ${formatFiat(r.threshold, sym, 2)}`;
+      return `${r.asset}/${r.fiat} mid > ${formatFiat(r.threshold, sym, 4)}`;
     case "priceBelow":
-      return `${r.asset}/${r.fiat} mid < ${formatFiat(r.threshold, sym, 2)}`;
+      return `${r.asset}/${r.fiat} mid < ${formatFiat(r.threshold, sym, 4)}`;
     case "spreadAbove":
       return `${r.asset}/${r.fiat} spread > ${formatPct(r.threshold, { frac: 2 })}`;
     case "spreadBelow":
@@ -135,7 +135,7 @@ function describeObservation(r: AlertRule, observed: number): string {
   switch (r.type) {
     case "priceAbove":
     case "priceBelow":
-      return `Observed mid ${formatFiat(observed, sym, 2)}`;
+      return `Observed mid ${formatFiat(observed, sym, 4)}`;
     case "spreadAbove":
     case "spreadBelow":
       return `Observed spread ${formatPct(observed, { frac: 2 })}`;

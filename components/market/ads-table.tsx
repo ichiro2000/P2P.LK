@@ -185,7 +185,7 @@ function AdRow({
             priceColor,
           )}
         >
-          {formatFiat(ad.price, symbol, 2)}
+          {formatFiat(ad.price, symbol, 4)}
         </div>
         {premium != null && (
           <div

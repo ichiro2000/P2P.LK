@@ -84,12 +84,12 @@ export default async function RiskPage({ searchParams }: { searchParams: SP }) {
                     label="Latest mid"
                     value={
                       report.stats.latestMid != null
-                        ? formatFiat(report.stats.latestMid, symbol, 2)
+                        ? formatFiat(report.stats.latestMid, symbol, 4)
                         : "—"
                     }
                     footnote={
                       report.stats.ma20 != null
-                        ? `MA20 ${formatFiat(report.stats.ma20, symbol, 2)}`
+                        ? `MA20 ${formatFiat(report.stats.ma20, symbol, 4)}`
                         : undefined
                     }
                   />

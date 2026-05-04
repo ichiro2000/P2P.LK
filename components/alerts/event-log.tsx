@@ -78,13 +78,13 @@ export function EventLog() {
               const symbol = fiat?.symbol ?? e.fiat;
               const observed =
                 meta.unit === "price"
-                  ? formatFiat(e.observed, symbol, 2)
+                  ? formatFiat(e.observed, symbol, 4)
                   : meta.unit === "percent"
                     ? formatPct(e.observed, { frac: 2 })
                     : `${formatCompact(e.observed)} ${e.asset}`;
               const threshold =
                 meta.unit === "price"
-                  ? formatFiat(e.threshold, symbol, 2)
+                  ? formatFiat(e.threshold, symbol, 4)
                   : meta.unit === "percent"
                     ? formatPct(e.threshold, { frac: 2 })
                     : `${formatCompact(e.threshold)} ${e.asset}`;

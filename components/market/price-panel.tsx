@@ -101,7 +101,7 @@ function PriceTile({
             color,
           )}
         >
-          {price != null ? formatFiat(price, symbol, 2) : "—"}
+          {price != null ? formatFiat(price, symbol, 4) : "—"}
         </span>
         <span className="text-xs text-muted-foreground">/ {asset}</span>
       </div>

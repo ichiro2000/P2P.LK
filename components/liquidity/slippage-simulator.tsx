@@ -170,14 +170,14 @@ export function SlippageSimulator({
           <ResultStat
             label="Top price"
             value={
-              result?.topPrice != null ? formatFiat(result.topPrice, symbol, 2) : "—"
+              result?.topPrice != null ? formatFiat(result.topPrice, symbol, 4) : "—"
             }
           />
           <ResultStat
             label="Effective price"
             value={
               result?.effectivePrice != null
-                ? formatFiat(result.effectivePrice, symbol, 2)
+                ? formatFiat(result.effectivePrice, symbol, 4)
                 : "—"
             }
           />
@@ -343,7 +343,7 @@ function StepList({
                 {s.merchantName}
               </span>
               <span className="font-mono tabular-nums text-foreground/80">
-                {formatPrice(s.price, 2)} {symbol}
+                {formatPrice(s.price, 4)} {symbol}
               </span>
               <span className="font-mono tabular-nums text-muted-foreground">
                 {formatCompact(s.assetFilled)} {asset}

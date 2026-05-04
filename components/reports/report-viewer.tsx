@@ -220,7 +220,7 @@ function formatCell(
   if (typeof value === "string") return value;
   switch (format) {
     case "price":
-      return formatPrice(value, 2);
+      return formatPrice(value, 4);
     case "pct":
       return formatPct(value, { frac: 2, sign: true });
     case "int":

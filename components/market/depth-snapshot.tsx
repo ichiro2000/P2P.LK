@@ -180,7 +180,7 @@ export function DepthSnapshot({ market }: { market: MarketSnapshot }) {
                 itemStyle={{
                   fontFamily: "var(--font-mono)",
                 }}
-                labelFormatter={(v) => `Price: ${formatFiat(Number(v), symbol, 2)}`}
+                labelFormatter={(v) => `Price: ${formatFiat(Number(v), symbol, 4)}`}
                 formatter={(val, name) => {
                   const n = Number(val);
                   if (!Number.isFinite(n) || n === 0) return ["—", name as string];
