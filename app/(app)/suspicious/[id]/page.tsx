@@ -83,7 +83,7 @@ export default async function SuspiciousDetailPage({
         <SectionHeader
           kicker="Suspicious taker · detail"
           title={displayName}
-          description="Every report filed against this taker, plus whether they're still active on the LKR book and whether their order count has kept climbing since the first flag."
+          description="Every report filed against this taker, plus whether they're still active on the Wise book and whether their order count has kept climbing since the first flag."
         />
 
         {isActive && (
@@ -92,7 +92,7 @@ export default async function SuspiciousDetailPage({
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[color:var(--color-sell)]" />
               <div>
                 <div className="text-sm font-semibold text-[color:var(--color-sell)]">
-                  Active on the LKR book right now
+                  Active on the Wise book right now
                 </div>
                 <div className="mt-0.5 text-[12px] text-muted-foreground">
                   This flagged taker appears in the most recent ingest tick. If
@@ -385,8 +385,8 @@ function HeaderCard({
             value={formatCompact(ticksSinceReport)}
             footnote={
               ticksSinceReport > 0
-                ? "LKR listing ticks after first report"
-                : "hasn't relisted on LKR since flag"
+                ? "Wise listing ticks after first report"
+                : "hasn't relisted on Wise since flag"
             }
           />
         </div>

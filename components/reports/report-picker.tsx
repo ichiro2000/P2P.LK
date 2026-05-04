@@ -21,7 +21,7 @@ const KINDS: {
   {
     id: "merchants",
     label: "Merchant scorecard",
-    description: "Counterparty ranking for the LKR bank market",
+    description: "Counterparty ranking for the Wise USD market",
     icon: Users,
   },
 ];

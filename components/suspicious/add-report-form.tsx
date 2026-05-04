@@ -300,7 +300,7 @@ export function AddReportForm() {
                       void runServerLookup(e.target.value.trim());
                     }
                   }}
-                  placeholder="https://www.bybit.com/en/p2p/profile/…/USDT/LKR/item"
+                  placeholder="https://www.bybit.com/en/p2p/profile/…/USDT/USD/item"
                 />
               </div>
             )}
@@ -339,7 +339,7 @@ export function AddReportForm() {
                 !displayNameLoading &&
                 !displayNameAuto && (
                   <p className="mt-1 text-[10px] text-muted-foreground/70">
-                    We haven&apos;t seen this taker on the LKR book yet — enter
+                    We haven&apos;t seen this taker on the Wise book yet — enter
                     their nickname manually.
                   </p>
                 )}

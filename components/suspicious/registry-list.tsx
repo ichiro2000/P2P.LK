@@ -142,7 +142,7 @@ function TakerBlock({
       {isActive && (
         <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[color:var(--color-sell)]">
           <AlertTriangle className="h-3 w-3 animate-pulse" />
-          Active on the LKR book right now
+          Active on the Wise book right now
         </div>
       )}
 
