@@ -35,6 +35,13 @@ export function Reveal({
     const node = ref.current;
     if (!node) return;
 
+    // threshold: 0 fires the moment a single pixel is visible. Earlier
+    // versions used threshold: 0.05 (5% of element visible), which is
+    // unreachable for very tall elements — e.g. the /suspicious registry
+    // list at ~610 entries is dozens of viewports tall, so no scroll
+    // position can ever expose 5% of it and the section stays stuck at
+    // opacity-0 forever. The rootMargin shrink is also dropped so reveal
+    // fires as soon as the element touches the viewport bottom.
     const io = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -42,7 +49,7 @@ export function Reveal({
           io.disconnect();
         }
       },
-      { rootMargin: "0px 0px -40px 0px", threshold: 0.05 },
+      { threshold: 0 },
     );
     io.observe(node);
     return () => io.disconnect();
