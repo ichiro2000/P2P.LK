@@ -1,9 +1,8 @@
 import type { NormalizedAd, TradeType } from "@/lib/types";
+import { binanceFetchMany, type BinanceCall } from "./binance-http";
 import {
-  BROWSER_UA,
   UpstreamError,
   clamp,
-  sweep,
   type BookQuery,
   type ExchangeAdapter,
   type FetchOpts,
@@ -68,13 +67,7 @@ type BinanceSearchResponse = { code?: string; success?: boolean; data: BinanceAd
  *   our `buy`  (bids) → query SELL
  *   our `sell` (asks) → query BUY
  */
-async function fetchPage(
-  q: BookQuery,
-  side: TradeType,
-  page: number,
-  rows: number,
-  opts?: FetchOpts,
-): Promise<BinanceAdItem[]> {
+function pageCall(q: BookQuery, side: TradeType, page: number, rows: number): BinanceCall {
   const body = {
     asset: q.asset,
     fiat: q.fiat,
@@ -89,23 +82,10 @@ async function fetchPage(
     proMerchantAds: false,
     shieldMerchantAds: false,
   };
-  let res: Response;
-  try {
-    res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": BROWSER_UA,
-        clienttype: "web",
-      },
-      body: JSON.stringify(body),
-      signal: opts?.signal,
-      cache: "no-store",
-    });
-  } catch (err) {
-    throw new UpstreamError("binance", `network error: ${(err as Error).message}`);
-  }
+  return { url: ENDPOINT, method: "POST", body: JSON.stringify(body) };
+}
+
+async function parsePage(res: Response, side: TradeType, page: number): Promise<BinanceAdItem[]> {
   if (!res.ok) throw new UpstreamError("binance", `HTTP ${res.status} (${side} p${page})`);
   let json: BinanceSearchResponse;
   try {
@@ -117,6 +97,66 @@ async function fetchPage(
     throw new UpstreamError("binance", `rejected request (code ${json?.code ?? "?"})`);
   }
   return Array.isArray(json.data) ? json.data : [];
+}
+
+/** Fetch several (side, page) pairs in one go — one relay request when the
+ *  relay is on. Each entry resolves to its items or its error. */
+async function fetchPages(
+  q: BookQuery,
+  wanted: { side: TradeType; page: number }[],
+  rows: number,
+  opts?: FetchOpts,
+): Promise<PromiseSettledResult<BinanceAdItem[]>[]> {
+  let responses: Response[];
+  try {
+    responses = await binanceFetchMany(wanted.map((w) => pageCall(q, w.side, w.page, rows)), opts?.signal);
+  } catch (err) {
+    throw new UpstreamError("binance", `network error: ${(err as Error).message}`);
+  }
+  return Promise.allSettled(responses.map((r, i) => parsePage(r, wanted[i].side, wanted[i].page)));
+}
+
+/** Pages per batch in a deep fetch. A typical LKR book is under 5 pages a
+ *  side, so most sweeps finish in one relay request. */
+const PAGE_BATCH = 5;
+
+/** Same rules as `sweep` (types.ts): page 1 failing throws; a later failure,
+ *  an empty or a short page ends that side; ads are de-duplicated. */
+async function deepSides(q: BookQuery, pages: number, rows: number, opts?: FetchOpts) {
+  const acc: Record<TradeType, { items: BinanceAdItem[]; seen: Set<string>; done: boolean }> = {
+    BUY: { items: [], seen: new Set(), done: false },
+    SELL: { items: [], seen: new Set(), done: false },
+  };
+  for (let from = 1; from <= pages; from += PAGE_BATCH) {
+    const to = Math.min(pages, from + PAGE_BATCH - 1);
+    const wanted = (["BUY", "SELL"] as TradeType[])
+      .filter((s) => !acc[s].done)
+      .flatMap((side) => Array.from({ length: to - from + 1 }, (_, k) => ({ side, page: from + k })));
+    if (wanted.length === 0) break;
+    const results = await fetchPages(q, wanted, rows, opts);
+    wanted.forEach((w, i) => {
+      const a = acc[w.side];
+      if (a.done) return;
+      const r = results[i];
+      if (r.status === "rejected") {
+        if (w.page === 1) throw r.reason;
+        a.done = true;
+        return;
+      }
+      if (r.value.length === 0) {
+        a.done = true;
+        return;
+      }
+      for (const it of r.value) {
+        if (!a.seen.has(it.adv.advNo)) {
+          a.seen.add(it.adv.advNo);
+          a.items.push(it);
+        }
+      }
+      if (r.value.length < rows) a.done = true;
+    });
+  }
+  return { buy: acc.BUY.items, sell: acc.SELL.items };
 }
 
 const pos = (v: Num) => {
@@ -232,10 +272,11 @@ export const binance: ExchangeAdapter = {
 
   async fetchBook(q, opts) {
     const rows = clamp(opts?.rows ?? 20, 5, 20);
-    const [buy, sell] = await Promise.all([
-      fetchPage(q, "BUY", 1, rows, opts),
-      fetchPage(q, "SELL", 1, rows, opts),
-    ]);
+    const [b, s] = await fetchPages(q, [{ side: "BUY", page: 1 }, { side: "SELL", page: 1 }], rows, opts);
+    if (b.status === "rejected") throw b.reason;
+    if (s.status === "rejected") throw s.reason;
+    const buy = b.value;
+    const sell = s.value;
     return {
       buy: buy.map((i) => normalize(i, "BUY")),
       sell: sell.map((i) => normalize(i, "SELL")),
@@ -245,9 +286,7 @@ export const binance: ExchangeAdapter = {
   async fetchDeep(q, opts) {
     const pages = clamp(opts?.pagesPerSide ?? 15, 1, 30);
     const rows = clamp(opts?.rowsPerPage ?? 20, 5, 20);
-    const side = (s: TradeType) =>
-      sweep((p) => fetchPage(q, s, p, rows, opts), (i) => i.adv.advNo, pages, rows);
-    const [buy, sell] = await Promise.all([side("BUY"), side("SELL")]);
+    const { buy, sell } = await deepSides(q, pages, rows, opts);
     return {
       buy: buy.map((i) => normalize(i, "BUY")),
       sell: sell.map((i) => normalize(i, "SELL")),

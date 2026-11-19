@@ -12,6 +12,7 @@
  */
 
 import { parseBinanceProfile, type BinanceProfileRef } from "@/lib/qr";
+import { binanceFetch } from "@/lib/exchanges/binance-http";
 
 const BINANCE_HOST_SUFFIXES = [
   "binance.com",
@@ -279,18 +280,12 @@ async function fetchProfileDirect(
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(
-      `https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/user/profile-and-ads-list?userNo=${encodeURIComponent(advertiserNo)}`,
+    const res = await binanceFetch(
       {
+        url: `https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/user/profile-and-ads-list?userNo=${encodeURIComponent(advertiserNo)}`,
         method: "GET",
-        signal: ctrl.signal,
-        cache: "no-store",
-        headers: {
-          Accept: "application/json",
-          "User-Agent": BROWSER_UA,
-          clienttype: "web",
-        },
       },
+      ctrl.signal,
     );
     if (!res.ok) return null;
     const json = (await res.json()) as {
@@ -367,18 +362,10 @@ async function probeAdvSearch(
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(
-      "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search",
+    const res = await binanceFetch(
       {
+        url: "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search",
         method: "POST",
-        signal: ctrl.signal,
-        cache: "no-store",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "User-Agent": BROWSER_UA,
-          clienttype: "web",
-        },
         body: JSON.stringify({
           asset: "USDT",
           fiat,
@@ -394,6 +381,7 @@ async function probeAdvSearch(
           shieldMerchantAds: false,
         }),
       },
+      ctrl.signal,
     );
     if (!res.ok) return null;
     const json = (await res.json()) as {

@@ -16,8 +16,9 @@
  * never shown as "none".
  */
 
+import { binanceFetchMany } from "./binance-http";
+
 const BASE = "https://p2p.binance.com/bapi/c2c";
-const UA = "Mozilla/5.0 (compatible; P2P.LK merchant stats)";
 
 export type BinanceProfile = {
   userNo: string;
@@ -107,36 +108,32 @@ export function parseBinanceReviews(json: unknown): BinanceReviews | null {
   return { positive, negative, positiveRate: total ? positive / total : null };
 }
 
-async function getJson(url: string, init: RequestInit, timeoutMs: number) {
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), timeoutMs);
-  try {
-    const r = await fetch(url, {
-      ...init,
-      signal: ac.signal,
-      headers: { "User-Agent": UA, Accept: "application/json", ...(init.headers ?? {}) },
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return (await r.json()) as unknown;
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-/** Both requests in parallel. Reviews are optional (null if that call fails). */
+/** Both requests together (one relay request in production). Reviews are
+ *  optional (null if that call fails). */
 export async function fetchBinanceTradeInfo(
   userNo: string,
   timeoutMs = 6000,
 ): Promise<{ profile: BinanceProfile; reviews: BinanceReviews | null } | null> {
   if (!/^[sS]?[A-Za-z0-9]{10,64}$/.test(userNo)) return null;
-  const [p, r] = await Promise.allSettled([
-    getJson(`${BASE}/v2/friendly/c2c/user/profile-and-ads-list?userNo=${encodeURIComponent(userNo)}`, {}, timeoutMs),
-    getJson(
-      `${BASE}/v1/friendly/c2c/review/user-review-statistics`,
-      { method: "POST", body: JSON.stringify({ userNo }), headers: { "Content-Type": "application/json" } },
-      timeoutMs,
-    ),
-  ]);
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  let responses: Response[];
+  try {
+    responses = await binanceFetchMany(
+      [
+        { url: `${BASE}/v2/friendly/c2c/user/profile-and-ads-list?userNo=${encodeURIComponent(userNo)}`, method: "GET" },
+        { url: `${BASE}/v1/friendly/c2c/review/user-review-statistics`, method: "POST", body: JSON.stringify({ userNo }) },
+      ],
+      ac.signal,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  const asJson = async (res: Response) => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as unknown;
+  };
+  const [p, r] = await Promise.allSettled(responses.map(asJson));
   if (p.status !== "fulfilled") throw p.reason instanceof Error ? p.reason : new Error(String(p.reason));
   const profile = parseBinanceProfile(p.value);
   if (!profile) return null;
