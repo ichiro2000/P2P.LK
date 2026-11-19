@@ -1,6 +1,6 @@
 // Cloudflare Worker config for P2P.LK v2.
-// IDs below are placeholders for local dev — replaced with real ones when we
-// deploy to the production Cloudflare account (phase 9).
+// Production resources live in the owner's account (Products@ichirox.com's
+// Account). Local dev uses the preview ids (its own local database and KV).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "p2p-lk",
@@ -28,17 +28,25 @@
   // Feature flags in /admin/system can pause FX collection and alert emails.
   "triggers": { "crons": ["* * * * *"] },
 
+  // p2p.lk and www.p2p.lk served by this worker (zone in this account).
+  "routes": [
+    { "pattern": "p2p.lk", "custom_domain": true },
+    { "pattern": "www.p2p.lk", "custom_domain": true }
+  ],
+
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "p2p-lk",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "d49e2422-f978-4dd9-badb-219c22712cfc",
+      // Local dev keeps its own database (miniflare keys it by this id).
+      "preview_database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "drizzle"
     }
   ],
   "kv_namespaces": [
-    { "binding": "LIVE", "id": "00000000000000000000000000000000" },
-    { "binding": "NEXT_INC_CACHE_KV", "id": "00000000000000000000000000000001" }
+    { "binding": "LIVE", "id": "6e2ae07036a14d6e8886dd9e0dbdf23f", "preview_id": "00000000000000000000000000000000" },
+    { "binding": "NEXT_INC_CACHE_KV", "id": "0348158ef38c47908c174df8fa918bdc", "preview_id": "00000000000000000000000000000001" }
   ],
   "browser": { "binding": "BROWSER" },
   // Cloudflare Email Service (transactional mail from p2p.lk). Workers Paid
@@ -59,6 +67,7 @@
     { "binding": "WORKER_SELF_REFERENCE", "service": "p2p-lk" }
   ],
   "vars": {
-    "NEXT_PUBLIC_SITE_URL": "http://localhost:3000"
+    // Production origin. Local dev overrides it in .dev.vars.
+    "NEXT_PUBLIC_SITE_URL": "https://p2p.lk"
   }
 }

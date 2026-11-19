@@ -1,7 +1,15 @@
 # Deploying P2P.LK v2 to Cloudflare
 
-> **Account rule:** deploy only to the owner's **new** Cloudflare account.
-> Never use the invitation.lk Cloudflare account.
+> **Account:** "Products@ichirox.com's Account" (id `2372ef6475f1b8779e1e42f1e58e713b`),
+> the owner's main account that also runs `planseat-io` and `weddingoffers`.
+> Never use the invitation.lk Cloudflare account. Everything P2P.LK creates is
+> named `p2p-lk…`; don't touch the other workers' resources.
+
+**Status (2026-11-20):** worker `p2p-lk` deployed, D1 `p2p-lk`
+(`d49e2422-…`), KV `p2p-lk-live` / `p2p-lk-next-cache`, Turnstile widget
+"P2P.LK sign-in and sign-up", secrets set, custom domains `p2p.lk` +
+`www.p2p.lk` attached. Waiting on: the registrar nameserver change (§1a),
+then Email Sending onboarding (§6) and `ADMIN_EMAILS`.
 
 Everything below is a one-time setup, then `npm run cf:deploy` for each release.
 Plan required: **Workers Paid ($5/mo)** (1-minute cron, Browser Rendering, CPU time).
@@ -11,7 +19,7 @@ Plan required: **Workers Paid ($5/mo)** (1-minute cron, Browser Rendering, CPU t
 | Item | Used for |
 |---|---|
 | Cloudflare account access (new account) with `p2p.lk` added as a zone | Worker, D1, KV, DNS, Turnstile |
-| Resend account + verified sending domain (e.g. `mail.p2p.lk`) | Verification, approval and alert emails |
+| Nameservers for `p2p.lk` changed at the .lk registrar | Domain + email sending |
 | Admin email address(es) | `ADMIN_EMAILS` — these become admins once verified |
 | Support email | Account page / emails |
 | Terms + Privacy text | Linked from sign-up |
@@ -35,6 +43,13 @@ Set the production var in `wrangler.jsonc`:
 "vars": { "NEXT_PUBLIC_SITE_URL": "https://p2p.lk" }
 ```
 
+## 1a. Nameservers (owner, at the .lk registrar)
+
+Set the nameservers for `p2p.lk` to **`ray.ns.cloudflare.com`** and
+**`savanna.ns.cloudflare.com`** (it currently points at another Cloudflare
+account's `salvador` / `hera`). Until then the zone is "pending": the custom
+domains and Email Sending can't activate.
+
 ## 2. Turnstile
 
 Cloudflare dashboard → Turnstile → add widget, hostname `p2p.lk` (managed
@@ -45,9 +60,8 @@ mode). Copy the **site key** (public) and **secret key**.
 ```bash
 npx wrangler secret put BETTER_AUTH_SECRET     # openssl rand -base64 32
 npx wrangler secret put TURNSTILE_SECRET_KEY
-npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put BETTER_AUTH_URL        # https://p2p.lk
-npx wrangler secret put EMAIL_FROM             # "P2P.LK <no-reply@mail.p2p.lk>"
+npx wrangler secret put EMAIL_FROM             # "P2P.LK <no-reply@p2p.lk>"
 npx wrangler secret put ADMIN_EMAILS           # comma-separated
 ```
 
@@ -96,11 +110,19 @@ Then attach the domain: Workers & Pages → `p2p-lk` → Settings → Domains &
 Routes → add custom domain `p2p.lk` (and `www.p2p.lk` → redirect rule to
 apex).
 
-## 6. Resend
+## 6. Email (Cloudflare Email Service)
 
-Add the DNS records Resend shows (SPF, DKIM, optional DMARC) in the `p2p.lk`
-zone; wait for "Verified". Without a key, production refuses to send mail
+Mail goes out through the `EMAIL` send_email binding (`wrangler.jsonc`) from
+`EMAIL_FROM`. Once the zone is active: dashboard → Compute → Email Service →
+Email Sending → **Onboard Domain** → `p2p.lk` → Activate (adds SPF, DKIM,
+DMARC and `cf-bounce` MX records). Without it, production refuses to send
 (sign-up shows an error) — by design.
+
+Limits: 3,000 emails a month per account are included in Workers Paid, then
+$0.35 per 1,000; the beta also has an account-wide daily quota (200/day at
+setup). `lib/email/deliver.ts` counts our sends per month in KV and stops
+alert emails at 1,800 and all email at 2,500, so P2P.LK alone can't cause an
+email overage (alerts still arrive in the app and as push).
 
 ## 7. Post-deploy checks (10 minutes)
 
@@ -184,3 +206,23 @@ Other notes:
 Bindings (`wrangler.jsonc`): `DB` (D1), `LIVE` + `NEXT_INC_CACHE_KV` (KV),
 `BROWSER` (Browser Rendering, QR short-links), `RL_READ` / `RL_WRITE` /
 `RL_ADMIN` (rate limits), `WORKER_SELF_REFERENCE`, cron `* * * * *`.
+
+## 10. Staying inside the $5 Workers Paid plan
+
+Workers Paid ($5/month) includes, **per account** (shared with planseat-io
+and weddingoffers): 10M requests, 30M CPU-ms, D1 25B rows read / 50M rows
+written / 5 GB, KV 10M reads / 1M writes, 3,000 emails. Measured P2P.LK load:
+
+| What | Per tick | Per month |
+|---|---|---|
+| D1 rows written, book tick (every minute) | ~17 | ~0.7M |
+| D1 rows written, sweep + rollup (every 10 min) | ~2,000–3,200 | ~9–14M |
+| D1 retention deletes (nightly) | | ~4M |
+| KV writes (live books, 4 per minute) | 4 | ~175K |
+| Cron invocations | 1 | ~43K |
+
+That is roughly 15–19M of the 50M included D1 writes. What keeps it there:
+the merchant sweep runs every 10 minutes (not 5), the hourly rollup only
+recomputes the open hour, and every write path is bounded. Cloudflare has no
+hard spend cap, so also add a budget alert (Billing → Billing notifications /
+Email Sending → Add Budget Alert) at $1 of usage-based charges.
