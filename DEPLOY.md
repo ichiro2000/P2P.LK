@@ -5,11 +5,25 @@
 > Never use the invitation.lk Cloudflare account. Everything P2P.LK creates is
 > named `p2p-lk…`; don't touch the other workers' resources.
 
-**Status (2026-11-20):** worker `p2p-lk` deployed, D1 `p2p-lk`
-(`d49e2422-…`), KV `p2p-lk-live` / `p2p-lk-next-cache`, Turnstile widget
-"P2P.LK sign-in and sign-up", secrets set, custom domains `p2p.lk` +
-`www.p2p.lk` attached. Waiting on: the registrar nameserver change (§1a),
-then Email Sending onboarding (§6) and `ADMIN_EMAILS`.
+**Status (2026-11-20): LIVE at https://p2p.lk.** Worker `p2p-lk`, D1
+`p2p-lk` (`d49e2422-…`), KV `p2p-lk-live` / `p2p-lk-next-cache`, Turnstile
+widget "P2P.LK sign-in and sign-up", secrets set, custom domains `p2p.lk` +
+`www.p2p.lk` (www → apex 301), Email Sending onboarded for `p2p.lk`,
+Binance relay on Vercel. Still open: `ADMIN_EMAILS` (owner's admin address)
+and a billing budget alert.
+
+## Binance relay (required)
+
+Binance's P2P API refuses every request from a Cloudflare Worker (HTTP 403,
+any host). The worker therefore sends Binance calls through
+`relay/binance-relay.ts`, deployed on Vercel (Hobby, region `sin1`
+Singapore; Binance also blocks US addresses) at
+`https://p2p-lk-binance-relay.vercel.app`. Worker secrets
+`BINANCE_RELAY_URL` + `BINANCE_RELAY_TOKEN`; Vercel env `RELAY_TOKEN` (same
+value). Calls are batched (a whole book = one relay request), so it runs at
+~150K requests/month, inside Vercel's free limits. Redeploy:
+`cd relay && npx vercel@latest deploy --prod`. If the relay is down, Binance
+pages show "Binance is not responding" and Bybit keeps working.
 
 Everything below is a one-time setup, then `npm run cf:deploy` for each release.
 Plan required: **Workers Paid ($5/mo)** (1-minute cron, Browser Rendering, CPU time).
