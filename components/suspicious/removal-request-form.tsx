@@ -1,26 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AlertTriangle, CheckCircle2, Loader2, ShieldOff } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { AlertTriangle, CheckCircle2, Loader2, ShieldOff } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Turnstile, type TurnstileHandle } from "@/components/common/turnstile";
+import { Callout, Field } from "./parts";
+
+const FIELD = "h-10 sm:h-9";
 
 /**
- * Public form embedded on the suspicious-taker detail page for requesting
- * that a taker be un-flagged. No admin token required — an admin reviews and
- * approves downstream. Kept collapsed by default so the detail page's primary
- * signals (reports, order trend) stay above the fold.
+ * Public form on the detail page for asking that a taker be un-flagged. No
+ * admin token — an admin reviews every request. Collapsed by default so the
+ * page's main signals stay above the fold.
  */
-export function RemovalRequestForm({
-  binanceUserId,
-  displayName,
-}: {
-  binanceUserId: string;
-  displayName: string;
-}) {
+export function RemovalRequestForm({ binanceUserId, displayName }: { binanceUserId: string; displayName: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -28,11 +25,17 @@ export function RemovalRequestForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [humanToken, setHumanToken] = useState<string | null>(null);
+  const turnstile = useRef<TurnstileHandle>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!reason.trim()) {
-      setError("Please explain why this flag is mistaken.");
+      setError("Explain why this flag is mistaken.");
+      return;
+    }
+    if (!humanToken) {
+      setError("Complete the human check first.");
       return;
     }
     setSubmitting(true);
@@ -45,9 +48,10 @@ export function RemovalRequestForm({
           binanceUserId,
           reason: reason.trim(),
           reporterContact: contact.trim() || null,
+          turnstileToken: humanToken,
         }),
       });
-      const json = await r.json();
+      const json = (await r.json()) as { error?: string };
       if (!r.ok) {
         setError(json.error ?? `HTTP ${r.status}`);
         return;
@@ -59,96 +63,81 @@ export function RemovalRequestForm({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error.");
     } finally {
+      // Tokens are single-use; get a fresh one for any retry.
+      turnstile.current?.reset();
       setSubmitting(false);
     }
   }
 
   if (!open) {
     return (
-      <div className="flex items-center justify-between rounded-lg border border-border bg-card/40 px-4 py-3 text-[12px] text-muted-foreground">
-        <div className="flex items-start gap-2">
-          <ShieldOff className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            Think this flag is a mistake?{" "}
-            <span className="text-foreground">
-              Request removal — an admin will review.
-            </span>
-          </span>
+      <Card className="gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <ShieldOff className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div className="space-y-0.5">
+            <div className="text-sm font-medium">Think this flag is a mistake?</div>
+            <div className="text-xs text-muted-foreground">Ask for removal. An admin reviews every request.</div>
+          </div>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setOpen(true)}
-        >
+        <Button type="button" variant="outline" className={FIELD} onClick={() => setOpen(true)}>
           Request removal
         </Button>
-      </div>
+      </Card>
     );
   }
 
   return (
-    <Card className="border-border bg-card/60">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          <ShieldOff className="h-3.5 w-3.5" />
-          Request removal for {displayName}
+    <Card className="gap-4 py-4">
+      <CardHeader className="px-4">
+        <CardTitle className="flex items-center gap-2 text-sm font-medium">
+          <ShieldOff className="size-4 text-muted-foreground" />
+          <span className="min-w-0 break-words">Request removal for {displayName}</span>
         </CardTitle>
-        <p className="text-[11px] text-muted-foreground/70">
-          Explain why this taker shouldn&apos;t be on the suspicious list. An
-          admin reviews every request before anything is un-flagged.
-        </p>
+        <CardDescription className="text-xs">
+          Explain why this taker shouldn&apos;t be on the list. Nothing is un-flagged until an admin approves it.
+        </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-4">
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Why is this flag mistaken?</Label>
-            <textarea
+          <Field label="Why is this flag mistaken?" htmlFor="rm-reason">
+            <Textarea
+              id="rm-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. This is my own account and the flag is based on a misunderstanding. The order referenced in the report was completed successfully — see tx IDs…"
+              placeholder="For example: this is my account and the order in the report was completed. Order IDs: …"
               maxLength={1000}
               rows={4}
-              className="w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+              className="min-h-24"
             />
-          </div>
+          </Field>
 
-          <div className="space-y-1.5">
-            <Label>Contact (optional)</Label>
+          <Field
+            label="Contact (optional)"
+            htmlFor="rm-contact"
+            hint="Lets the admin ask a follow-up question instead of rejecting the request."
+          >
             <Input
+              id="rm-contact"
+              className={FIELD}
               value={contact}
               onChange={(e) => setContact(e.target.value)}
-              placeholder="Email, Telegram handle — so the admin can follow up"
+              placeholder="Email or Telegram handle"
               maxLength={200}
             />
-            <p className="text-[10px] text-muted-foreground/70">
-              Optional. Helps the admin ask for clarification instead of
-              rejecting the request outright.
-            </p>
-          </div>
+          </Field>
 
-          {error && (
-            <div className="flex items-start gap-2 rounded-md border border-[color:var(--color-sell)]/40 bg-[color:var(--color-sell-muted)] px-3 py-2 text-sm text-[color:var(--color-sell)]">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
+          <Turnstile ref={turnstile} onToken={setHumanToken} />
 
+          {error && <Callout tone="sell" icon={AlertTriangle} title={error} role="alert" />}
           {submitted && (
-            <div className="flex items-center gap-2 rounded-md border border-[color:var(--color-buy)]/40 bg-[color:var(--color-buy-muted)] px-3 py-2 text-sm text-[color:var(--color-buy)]">
-              <CheckCircle2 className="h-4 w-4" />
-              Request submitted. An admin will review it.
-            </div>
+            <Callout tone="buy" icon={CheckCircle2} title="Request sent. An admin will review it." role="status" />
           )}
 
-          <div className="flex items-center gap-2 pt-1">
-            <Button type="submit" disabled={submitting || submitted}>
-              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              Submit request
-            </Button>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
             <Button
               type="button"
               variant="ghost"
+              className={FIELD}
               onClick={() => {
                 setOpen(false);
                 setError(null);
@@ -156,6 +145,10 @@ export function RemovalRequestForm({
               disabled={submitting}
             >
               Cancel
+            </Button>
+            <Button type="submit" className={FIELD} disabled={submitting || submitted || !humanToken}>
+              {submitting && <Loader2 className="animate-spin" />}
+              Send request
             </Button>
           </div>
         </form>

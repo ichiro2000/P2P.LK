@@ -6,12 +6,12 @@ import {
   RANGES,
   type RangeKey,
 } from "@/lib/db/queries";
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { computeRiskReport } from "@/lib/risk";
 import { mean, stdev } from "@/lib/stats";
-import { fetchBothSides, normalizeAds } from "@/lib/binance";
 import { buildMarket, summarizeMerchants } from "@/lib/analytics";
-import { resolveBankPayTypes } from "@/lib/constants";
+import { getExchange, type ExchangeId } from "@/lib/exchanges";
+import { getBook } from "@/lib/market-data";
 import { formatSLT } from "@/lib/format";
 
 /** ── Shared types ────────────────────────────────────────────────────── */
@@ -48,15 +48,16 @@ export type ReportDocument = {
  * exclusively — the point of a recap is what happened, not the live tick.
  */
 export async function dailyRecapReport(
+  ex: ExchangeId,
   asset: string,
   fiat: string,
   range: RangeKey = "24h",
 ): Promise<ReportDocument> {
   const [snapshots, summary, latest, risk] = await Promise.all([
-    listMarketSnapshots(asset, fiat, range),
-    marketSummary(asset, fiat, range),
-    latestMarketSnapshot(asset, fiat),
-    computeRiskReport(asset, fiat, range),
+    listMarketSnapshots(ex, asset, fiat, range),
+    marketSummary(ex, asset, fiat, range),
+    latestMarketSnapshot(ex, asset, fiat),
+    computeRiskReport(ex, asset, fiat, range),
   ]);
   const first = snapshots[0];
 
@@ -66,61 +67,55 @@ export async function dailyRecapReport(
   const σ = stdev(mids);
   const μ = mean(mids);
 
-  // Top merchants in the range ranked by average fiat depth.
+  // Top merchants in the range ranked by average fiat depth — aggregated in
+  // SQL and grouped by merchant id (was: every raw row loaded into memory and
+  // grouped by display name).
   const since = Math.floor(Date.now() / 1000) - RANGES[range];
   const db = await getDb();
-  const latestMerchants = await db
-    .select({
-      name: schema.merchantSnapshots.merchantName,
-      orders: schema.merchantSnapshots.ordersMonth,
-      completion: schema.merchantSnapshots.completionRate,
-      depth: schema.merchantSnapshots.totalAvailableFiat,
-      ts: schema.merchantSnapshots.ts,
-    })
-    .from(schema.merchantSnapshots)
-    .where(
-      and(
-        eq(schema.merchantSnapshots.asset, asset),
-        eq(schema.merchantSnapshots.fiat, fiat),
-        gte(schema.merchantSnapshots.ts, since),
-      ),
-    )
-    .orderBy(asc(schema.merchantSnapshots.ts));
-
-  // Reduce to per-merchant averages within the window.
-  const mMap = new Map<
-    string,
-    { name: string; orders: number; completion: number; depth: number; ticks: number }
-  >();
-  for (const r of latestMerchants) {
-    const e = mMap.get(r.name) ?? {
-      name: r.name,
-      orders: 0,
-      completion: 0,
-      depth: 0,
-      ticks: 0,
-    };
-    e.orders = Math.max(e.orders, r.orders ?? 0);
-    e.completion += r.completion ?? 0;
-    e.depth += r.depth ?? 0;
-    e.ticks += 1;
-    mMap.set(r.name, e);
-  }
-  const topMerchants = [...mMap.values()]
-    .map((e) => ({
-      name: e.name,
-      orders: e.orders,
-      completion: e.ticks > 0 ? e.completion / e.ticks : 0,
-      avgDepth: e.ticks > 0 ? e.depth / e.ticks : 0,
-      ticks: e.ticks,
-    }))
-    .sort((a, b) => b.avgDepth - a.avgDepth)
-    .slice(0, 10);
+  const h = schema.merchantHourly;
+  const m = schema.merchants;
+  const topMerchants = (
+    await db
+      .select({
+        name: sql<string>`max(${m.merchantName})`,
+        orders: sql<number>`max(${h.ordersMonth})`,
+        completion: sql<number>`avg(${h.completionRate})`,
+        avgDepth: sql<number>`avg(${h.maxAvailableFiat})`,
+        ticks: sql<number>`sum(${h.samples})`,
+      })
+      .from(h)
+      .leftJoin(
+        m,
+        and(
+          eq(m.exchange, h.exchange),
+          eq(m.merchantId, h.merchantId),
+          eq(m.asset, h.asset),
+          eq(m.fiat, h.fiat),
+        ),
+      )
+      .where(
+        and(
+          eq(h.exchange, ex),
+          eq(h.asset, asset),
+          eq(h.fiat, fiat),
+          gte(h.hourTs, since - (since % 3600)),
+        ),
+      )
+      .groupBy(h.merchantId)
+      .orderBy(desc(sql`avg(${h.maxAvailableFiat})`))
+      .limit(10)
+  ).map((r) => ({
+    name: r.name ?? "—",
+    orders: Number(r.orders ?? 0),
+    completion: Number(r.completion ?? 0),
+    avgDepth: Number(r.avgDepth ?? 0),
+    ticks: Number(r.ticks ?? 0),
+  }));
 
   return {
     kind: "daily-recap",
     title: `${asset}/${fiat} recap · ${range}`,
-    subtitle: `Binance P2P · ${snapshots.length} snapshots`,
+    subtitle: `${getExchange(ex).label} P2P · ${snapshots.length} data points`,
     generatedAt: new Date().toISOString(),
     meta: [
       {
@@ -202,7 +197,7 @@ export async function dailyRecapReport(
             format: "compact",
             align: "right",
           },
-          { key: "ticks", header: "Ticks seen", align: "right" },
+          { key: "ticks", header: "Sweeps seen", align: "right" },
         ],
         rows: topMerchants.map((m, i) => ({
           rank: i + 1,
@@ -221,49 +216,41 @@ export async function dailyRecapReport(
 
 /**
  * For a single market: snapshots the current ad book and ranks merchants by
- * price competitiveness (distance from market median) alongside trust.
+ * the reliability score, with each side's gap to the best price.
  * Pure client report — uses the live feed, not the ingested series.
  */
 export async function merchantScorecardReport(
+  ex: ExchangeId,
   asset: string,
   fiat: string,
 ): Promise<ReportDocument> {
-  const { buy, sell } = await fetchBothSides({
-    asset,
-    fiat,
-    rows: 20,
-    payTypes: resolveBankPayTypes(""),
-    publisherType: null,
-  });
-  const ads = [
-    ...normalizeAds(buy, "BUY"),
-    ...normalizeAds(sell, "SELL"),
-  ];
+  const book = await getBook(ex, { asset, fiat });
+  const ads = [...book.buy, ...book.sell];
   const market = buildMarket(asset, fiat, ads);
   const median = market.sell.medianPrice ?? market.buy.medianPrice ?? null;
-  const merchants = summarizeMerchants(ads, median);
+  const merchants = summarizeMerchants(ads);
 
   const verified = merchants.filter((m) => m.isMerchant).length;
 
   return {
     kind: "merchant-scorecard",
-    title: `Merchant scorecard · ${asset}/${fiat}`,
+    title: `Merchant scorecard · ${getExchange(ex).label} ${asset}/${fiat}`,
     subtitle: `${merchants.length} merchants · ${verified} verified`,
     generatedAt: new Date().toISOString(),
     meta: [
       { label: "Best bid", value: market.buy.bestPrice?.toFixed(2) ?? "—" },
       { label: "Best ask", value: market.sell.bestPrice?.toFixed(2) ?? "—" },
-      { label: "Median", value: median?.toFixed(2) ?? "—" },
+      { label: "Median ask (±2% of best)", value: median?.toFixed(2) ?? "—" },
     ],
     tables: [
       {
         id: "merchants",
-        title: "Merchants ranked by trust score",
-        subtitle: "Composite of completion rate, order volume and release time",
+        title: "Merchants ranked by reliability score",
+        subtitle: "Confidence-adjusted completion (Wilson lower bound) and 30-day volume; gaps are per side vs the best ad",
         columns: [
           { key: "rank", header: "#", align: "right" },
           { key: "name", header: "Merchant" },
-          { key: "trust", header: "Trust", format: "int", align: "right" },
+          { key: "trust", header: "Reliability", format: "int", align: "right" },
           {
             key: "orders",
             header: "30d orders",
@@ -276,22 +263,12 @@ export async function merchantScorecardReport(
             format: "pct",
             align: "right",
           },
-          {
-            key: "premium",
-            header: "Premium",
-            format: "pct",
-            align: "right",
-          },
+          { key: "askGap", header: "Ask vs best", format: "pct", align: "right" },
+          { key: "bidGap", header: "Bid vs best", format: "pct", align: "right" },
           {
             key: "depth",
             header: "Depth (fiat)",
             format: "compact",
-            align: "right",
-          },
-          {
-            key: "release",
-            header: "Release",
-            format: "duration",
             align: "right",
           },
           { key: "rails", header: "Rails" },
@@ -302,9 +279,9 @@ export async function merchantScorecardReport(
           trust: m.trustScore,
           orders: m.orders30d,
           completion: m.completionRate,
-          premium: m.premiumVsMedian,
+          askGap: m.askVsBest,
+          bidGap: m.bidVsBest,
           depth: m.totalAvailableFiat,
-          release: m.avgReleaseSec ?? null,
           rails: m.payMethods.join(", "),
         })),
       },
@@ -319,17 +296,12 @@ export async function merchantScorecardReport(
  * populate the Reports picker and prevent users from running recap reports
  * against markets the ingest has never seen.
  */
-export async function listAvailableMarkets() {
+export async function listAvailableMarkets(ex: ExchangeId) {
   const db = await getDb();
+  const h = schema.marketHourly;
   return db
-    .selectDistinct({
-      asset: schema.marketSnapshots.asset,
-      fiat: schema.marketSnapshots.fiat,
-    })
-    .from(schema.marketSnapshots)
-    .orderBy(
-      asc(schema.marketSnapshots.asset),
-      asc(schema.marketSnapshots.fiat),
-    );
+    .selectDistinct({ asset: h.asset, fiat: h.fiat })
+    .from(h)
+    .where(eq(h.exchange, ex))
+    .orderBy(asc(h.asset), asc(h.fiat));
 }
-

@@ -1,134 +1,97 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BellRing, CheckCheck, Mail, Trash2 } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Empty } from "@/components/common/empty";
-import { BellRing, CheckCheck, History, Trash2 } from "lucide-react";
-import {
-  alertEvents,
-  useStorageValue,
-  STORAGE_KEYS,
-} from "@/lib/storage";
-import { RULE_TYPE_META } from "@/lib/alert-engine";
-import { formatCompact, formatFiat, formatPct } from "@/lib/format";
-import { getFiat } from "@/lib/constants";
+import { useAlertEvents } from "@/hooks/use-member-data";
 import { cn } from "@/lib/utils";
+import { EXCHANGE_LABEL, RULE_TYPE_META, formatRuleValue } from "./meta";
 
-export function EventLog() {
-  const events = useStorageValue(
-    () => alertEvents.list(),
-    [STORAGE_KEYS.events],
-    [],
+/** Toolbar for the event log section header (mark read / clear). */
+export function EventLogActions() {
+  const { events, unread, markRead, clear } = useAlertEvents();
+  if (events.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1">
+      {unread > 0 && (
+        <Button variant="ghost" size="sm" className="h-10 sm:h-7" onClick={() => markRead()}>
+          <CheckCheck /> Mark read
+        </Button>
+      )}
+      <Button variant="ghost" size="sm" className="h-10 sm:h-7" onClick={() => clear()}>
+        <Trash2 /> Clear
+      </Button>
+    </div>
   );
-  const unread = events.filter((e) => !e.read).length;
+}
+
+/** The member's alert inbox (fired by the server every minute). */
+export function EventLog() {
+  const { events, markRead, ready } = useAlertEvents();
+
+  if (!ready) return <Skeleton className="h-32 w-full rounded-xl" />;
+
+  if (events.length === 0) {
+    return (
+      <Empty
+        icon={BellRing}
+        title="No events yet"
+        description="When a rule matches the live market, the event lands here and, if you asked for it, in your email."
+      />
+    );
+  }
 
   return (
-    <Card className="border-border bg-card/60">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-[13px] font-semibold">
-            <History className="h-3.5 w-3.5 text-primary" strokeWidth={1.75} />
-            Event log
-            {events.length > 0 && (
-              <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                {events.length}
-                {unread > 0 && (
-                  <span className="ml-1 text-primary">({unread} new)</span>
-                )}
-              </span>
-            )}
-          </CardTitle>
-          {events.length > 0 && (
-            <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-              {unread > 0 && (
-                <button
-                  type="button"
-                  onClick={() => alertEvents.markAllRead()}
-                  className="inline-flex items-center gap-1 hover:text-foreground"
-                >
-                  <CheckCheck className="h-3 w-3" strokeWidth={2} />
-                  Mark read
-                </button>
-              )}
+    <Card className="gap-0 py-0">
+      <ul className="divide-y">
+        {events.map((e) => {
+          const meta = RULE_TYPE_META[e.type];
+          return (
+            <li key={e.id}>
               <button
                 type="button"
-                onClick={() => alertEvents.clear()}
-                className="inline-flex items-center gap-1 hover:text-foreground"
+                onClick={() => !e.read && markRead([e.id])}
+                className={cn(
+                  "w-full space-y-1 px-4 py-3 text-left transition-colors outline-none hover:bg-muted/50 focus-visible:bg-muted",
+                  !e.read && "bg-muted/40",
+                )}
               >
-                <Trash2 className="h-3 w-3" strokeWidth={2} />
-                Clear
-              </button>
-            </div>
-          )}
-        </div>
-      </CardHeader>
-
-      <CardContent className="pt-0">
-        {events.length === 0 ? (
-          <Empty
-            icon={BellRing}
-            title="No events fired yet"
-            description="When a rule matches the live market, the event lands here. A toast also pops up if the app is open."
-          />
-        ) : (
-          <div className="rounded-lg border border-border/60 overflow-hidden">
-            {events.map((e) => {
-              const meta = RULE_TYPE_META[e.type];
-              const fiat = getFiat(e.fiat);
-              const symbol = fiat?.symbol ?? e.fiat;
-              const observed =
-                meta.unit === "price"
-                  ? formatFiat(e.observed, symbol, 2)
-                  : meta.unit === "percent"
-                    ? formatPct(e.observed, { frac: 2 })
-                    : `${formatCompact(e.observed)} ${e.asset}`;
-              const threshold =
-                meta.unit === "price"
-                  ? formatFiat(e.threshold, symbol, 2)
-                  : meta.unit === "percent"
-                    ? formatPct(e.threshold, { frac: 2 })
-                    : `${formatCompact(e.threshold)} ${e.asset}`;
-              return (
-                <button
-                  key={e.id}
-                  type="button"
-                  onClick={() => alertEvents.markRead(e.id)}
-                  className={cn(
-                    "w-full text-left border-b border-border/60 px-4 py-3 last:border-0 transition-colors hover:bg-accent/40",
-                    !e.read && "bg-primary/[0.04]",
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {!e.read && (
-                        <span
-                          aria-hidden
-                          className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                        />
-                      )}
-                      <span className="font-mono text-sm font-medium text-foreground">
-                        {e.asset}/{e.fiat}
-                      </span>
-                      <span className="truncate text-[12px] text-muted-foreground">
-                        {meta.label} {meta.comparator}{" "}
-                        <span className="font-mono tabular-nums text-foreground/80">
-                          {threshold}
-                        </span>
-                      </span>
-                    </div>
-                    <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
-                      {formatDistanceToNow(new Date(e.at), { addSuffix: true })}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {!e.read && (
+                      <span className="size-2 shrink-0 rounded-full bg-[color:var(--color-warn)]" aria-label="Unread" />
+                    )}
+                    <span className="truncate text-sm font-medium">{e.ruleLabel}</span>
+                  </div>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {formatDistanceToNow(new Date(e.ts * 1000), { addSuffix: true })}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                  <span>{EXCHANGE_LABEL[e.exchange]}</span>
+                  <span>
+                    Observed{" "}
+                    <span className="font-mono tabular-nums text-foreground">{formatRuleValue(e.type, e.observed)}</span>
+                  </span>
+                  <span>
+                    Rule {meta.comparator}{" "}
+                    <span className="font-mono tabular-nums">{formatRuleValue(e.type, e.threshold)}</span>
+                  </span>
+                  {e.emailed && (
+                    <span className="inline-flex items-center gap-1">
+                      <Mail className="size-3" /> emailed
                     </span>
-                  </div>
-                  <div className="mt-1 pl-3 font-mono text-[11px] tabular-nums text-[color:var(--color-warn)]">
-                    observed {observed}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
+                  )}
+                </div>
+                {e.detail && <p className="text-xs text-muted-foreground">{e.detail}</p>}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </Card>
   );
 }

@@ -3,153 +3,156 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Segmented } from "@/components/market/segmented";
+import { useExchange } from "@/components/shell/exchange-context";
+import { useAlertRules } from "@/hooks/use-member-data";
 import { ASSET, FIAT } from "@/lib/constants";
-import { alertRules, type AlertRuleType } from "@/lib/storage";
-import { RULE_TYPE_META } from "@/lib/alert-engine";
+import type { AlertType } from "@/lib/db/schema";
+import type { ExchangeId } from "@/lib/exchanges/types";
+import { COOLDOWNS, DOLLAR_RULES, EXCHANGE_LABEL, RULE_TYPES, RULE_TYPE_META, cooldownLabel, describeRule } from "./meta";
 
-const TYPE_ORDER: AlertRuleType[] = [
-  "priceAbove",
-  "priceBelow",
-  "spreadAbove",
-  "spreadBelow",
-  "depthBelow",
-];
+const FIELD = "h-10 sm:h-9";
+const EXCHANGE_OPTS = (["binance", "bybit"] as const).map((ex) => ({ value: ex, label: EXCHANGE_LABEL[ex] }));
+const DEFAULT_THRESHOLD: Record<AlertType, number> = {
+  priceAbove: 330,
+  priceBelow: 320,
+  spreadAbove: 1,
+  spreadBelow: 0.3,
+  depthBelow: 5000,
+  askDepthBelow: 2000,
+  bidDepthBelow: 2000,
+  offMarketAd: 1,
+  usdGoogleUp: 0.3,
+  usdGoogleDown: 0.3,
+  usdCbslUp: 0.5,
+  usdCbslDown: 0.5,
+};
 
+/** New server-side rule (members only — the page gates guests). */
 export function RuleForm() {
-  // Asset and fiat are product-scoped — no picker needed.
-  const asset = ASSET;
-  const fiat = FIAT.code;
-  const symbol = FIAT.symbol;
+  const { exchange: activeExchange } = useExchange();
+  const { create, enabled } = useAlertRules();
 
-  const [type, setType] = useState<AlertRuleType>("priceAbove");
-  const [threshold, setThreshold] = useState<number>(330);
-  const [cooldown, setCooldown] = useState<number>(300);
+  const [exchange, setExchange] = useState<ExchangeId>(activeExchange);
+  const [type, setType] = useState<AlertType>("priceAbove");
+  const [threshold, setThreshold] = useState<string>(String(DEFAULT_THRESHOLD.priceAbove));
+  const [cooldown, setCooldown] = useState<number>(1800);
+  const [email, setEmail] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const meta = RULE_TYPE_META[type];
+  const unitLabel = meta.unit === "price" ? `${FIAT.symbol} per ${ASSET}` : meta.unit === "percent" ? "%" : ASSET;
 
-  const unitLabel =
-    meta.unit === "price"
-      ? `${symbol} / ${asset}`
-      : meta.unit === "percent"
-        ? "% (e.g. 0.5 for 0.5%)"
-        : `${asset} (e.g. 5000)`;
+  function pickType(t: AlertType) {
+    setType(t);
+    setThreshold(String(DEFAULT_THRESHOLD[t]));
+  }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!Number.isFinite(threshold) || threshold <= 0) {
+    const n = Number(threshold);
+    if (!Number.isFinite(n) || n <= 0) {
       toast.error("Threshold must be a positive number");
       return;
     }
-    const internal = meta.unit === "percent" ? threshold / 100 : threshold;
-
-    alertRules.create({
+    const value = meta.unit === "percent" ? n / 100 : n;
+    if (meta.unit === "percent" && value > 1) {
+      toast.error("Use a percentage up to 100");
+      return;
+    }
+    setSaving(true);
+    const rule = await create({
+      exchange,
       type,
-      asset,
-      fiat,
-      threshold: internal,
-      cooldownSec: Math.max(30, cooldown),
+      threshold: value,
+      label: describeRule({ exchange, type, threshold: value }),
+      email,
+      cooldownSec: cooldown,
     });
-    toast.success("Alert rule created");
+    setSaving(false);
+    if (rule) toast.success("Alert rule created");
   }
 
   return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          <span>New alert rule</span>
-          <span className="font-mono text-[10px] tracking-wider text-muted-foreground/70">
-            {asset}/{fiat}
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form
-          onSubmit={submit}
-          className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(200px,1fr)_150px_130px_auto]"
-        >
-          <Field label="Condition">
-            <Select
-              value={type}
-              onValueChange={(v) => setType((v as AlertRuleType) ?? "priceAbove")}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue>
-                  {(val) =>
-                    RULE_TYPE_META[val as AlertRuleType]?.label ?? "Condition"
-                  }
-                </SelectValue>
+    <Card className="py-4">
+      <CardContent className="px-4">
+        <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:items-start">
+          <div className="space-y-1.5">
+            <Label>Exchange</Label>
+            <Segmented label="Exchange" value={exchange} onChange={setExchange} options={EXCHANGE_OPTS} className="w-full *:flex-1" />
+          </div>
+
+          <div className="space-y-1.5 sm:col-span-1 lg:col-span-3">
+            <Label htmlFor="rule-type">Condition</Label>
+            <Select value={type} onValueChange={(v) => pickType((v as AlertType) ?? "priceAbove")}>
+              <SelectTrigger id="rule-type" className={`w-full ${FIELD}`}>
+                <SelectValue>{(val) => RULE_TYPE_META[val as AlertType]?.label ?? "Condition"}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {TYPE_ORDER.map((t) => (
-                  <SelectItem key={t} value={t}>
+                {RULE_TYPES.map((t) => (
+                  <SelectItem key={t} value={t} className="min-h-10 sm:min-h-0">
                     {RULE_TYPE_META[t].label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          </Field>
+          </div>
 
-          <Field label={`Threshold · ${unitLabel}`}>
+          <div className="space-y-1.5">
+            <Label htmlFor="rule-threshold">
+              {type === "offMarketAd" ? "Better by (%)" : DOLLAR_RULES.has(type) ? "Dollar move (%)" : `Threshold (${unitLabel})`}
+            </Label>
             <Input
+              id="rule-threshold"
               type="number"
+              inputMode="decimal"
               value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value) || 0)}
+              onChange={(e) => setThreshold(e.target.value)}
               min={0}
               step={meta.unit === "percent" ? 0.01 : 1}
-              className="font-mono tabular-nums"
+              className={`font-mono tabular-nums ${FIELD}`}
             />
-          </Field>
+            <p className="text-xs text-muted-foreground">{meta.hint}</p>
+          </div>
 
-          <Field label="Cooldown (sec)">
-            <Input
-              type="number"
-              value={cooldown}
-              onChange={(e) => setCooldown(Number(e.target.value) || 300)}
-              min={30}
-              step={30}
-              className="font-mono tabular-nums"
-            />
-          </Field>
+          <div className="space-y-1.5">
+            <Label htmlFor="rule-cooldown">Cooldown</Label>
+            <Select value={String(cooldown)} onValueChange={(v) => setCooldown(Number(v) || 1800)}>
+              <SelectTrigger id="rule-cooldown" className={`w-full ${FIELD}`}>
+                <SelectValue>{(val) => cooldownLabel(Number(val))}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {COOLDOWNS.map((c) => (
+                  <SelectItem key={c.sec} value={String(c.sec)} className="min-h-10 sm:min-h-0">
+                    {c.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Quiet time after it fires</p>
+          </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[10px] font-semibold uppercase tracking-[0.12em] text-transparent select-none">
-              .
-            </Label>
-            <Button type="submit" className="h-8 gap-1.5">
-              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-              Add rule
+          <div className="space-y-1.5">
+            <Label htmlFor="rule-email">Email me</Label>
+            <div className={`flex items-center gap-2 ${FIELD}`}>
+              <Switch id="rule-email" checked={email} onCheckedChange={setEmail} />
+              <span className="text-xs text-muted-foreground">{email ? "Email + in-app" : "In-app only"}</span>
+            </div>
+          </div>
+
+          <div className="lg:pt-6">
+            <Button type="submit" disabled={saving || !enabled} className={`w-full ${FIELD}`}>
+              <Plus /> {saving ? "Adding…" : enabled ? "Add rule" : "Loading your account…"}
             </Button>
           </div>
         </form>
       </CardContent>
     </Card>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        {label}
-      </Label>
-      {children}
-    </div>
   );
 }

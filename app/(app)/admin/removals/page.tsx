@@ -1,22 +1,28 @@
 import { Topbar } from "@/components/shell/topbar";
-import { SectionHeader } from "@/components/common/section-header";
+import { PageBody, PageHeader } from "@/components/common/page";
 import { RemovalQueue } from "@/components/admin/removal-queue";
+import { requireAdminPage } from "@/lib/auth/session";
+import { privateMetadata } from "@/lib/seo";
 
-export const metadata = { title: "Admin · Removal requests" };
+export const metadata = privateMetadata("Admin · Removal requests");
 export const dynamic = "force-dynamic";
 
-export default function AdminRemovalsPage() {
+// Access: admins only, checked here as well as in the layout (an RSC
+// navigation can render this page without the layout). The queue's API
+// routes check again.
+export default async function AdminRemovalsPage() {
+  await requireAdminPage("/admin/removals");
   return (
     <>
       <Topbar title="Removal requests" subtitle="Admin · review queue" />
-      <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
-        <SectionHeader
-          kicker="Admin"
+      <PageBody>
+        <PageHeader
+          eyebrow="Admin"
           title="Removal requests"
-          description="Public requests to un-flag suspicious takers. Approving a request retracts every active report for that taker in one shot."
+          description="Public requests to un-flag suspicious takers. Approving a request retracts every active report for that taker at once."
         />
         <RemovalQueue />
-      </div>
+      </PageBody>
     </>
   );
 }

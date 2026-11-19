@@ -21,6 +21,8 @@ export type MarketRef = {
 };
 
 export type MerchantRef = {
+  /** Exchange the merchant was starred on (absent in pre-Bybit data). */
+  exchange?: string;
   id: string;
   name: string;
   asset?: string;
@@ -301,44 +303,62 @@ export const alertEvents = {
 
 /** ── React hook: subscribe to any key ────────────────────────────────── */
 
-import { useEffect, useState } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
+
+/** Raw localStorage contents of `keys`, joined — a stable primitive snapshot
+ *  so useSyncExternalStore only re-renders when the stored data changes. */
+function readRaw(keys: string[]): string {
+  try {
+    return keys.map((k) => window.localStorage.getItem(k) ?? "").join("\u0000");
+  } catch {
+    return "";
+  }
+}
 
 /**
  * Client-only state mirror of a localStorage selector.
  *
- * First render on the client matches the server-rendered HTML (returns
- * `fallback`), and we hydrate from real localStorage in a mount effect.
- * Further writes to the same keys re-trigger via our custom "p2plk:storage"
- * event (same tab) and the native "storage" event (other tabs).
+ * Server render and hydration use `fallback`; after that the value tracks
+ * localStorage through useSyncExternalStore. Writes re-trigger via our
+ * custom "p2plk:storage" event (same tab) and the native "storage" event
+ * (other tabs).
  */
 export function useStorageValue<T>(
   fn: () => T,
   /** List of keys the selector reads from — drives subscription scope. */
   keys: string[],
-  /** Initial value to render during SSR and before the mount effect runs. */
+  /** Value rendered on the server and during hydration. */
   fallback: T,
 ): T {
-  const [value, setValue] = useState<T>(fallback);
-
-  useEffect(() => {
-    setValue(fn());
-    const onLocal = (e: Event) => {
-      const key = (e as CustomEvent<{ key: string }>).detail?.key;
-      if (!key || keys.includes(key)) setValue(fn());
-    };
-    const onStorage = (e: StorageEvent) => {
-      if (!e.key || keys.includes(e.key)) setValue(fn());
-    };
-    window.addEventListener("p2plk:storage", onLocal as EventListener);
-    window.addEventListener("storage", onStorage);
-    return () => {
-      window.removeEventListener("p2plk:storage", onLocal as EventListener);
-      window.removeEventListener("storage", onStorage);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keys.join("|")]);
-
-  return value;
+  const sig = keys.join("|");
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const watched = sig.split("|");
+      const onLocal = (e: Event) => {
+        const key = (e as CustomEvent<{ key: string }>).detail?.key;
+        if (!key || watched.includes(key)) onChange();
+      };
+      const onStorage = (e: StorageEvent) => {
+        if (!e.key || watched.includes(e.key)) onChange();
+      };
+      window.addEventListener("p2plk:storage", onLocal as EventListener);
+      window.addEventListener("storage", onStorage);
+      return () => {
+        window.removeEventListener("p2plk:storage", onLocal as EventListener);
+        window.removeEventListener("storage", onStorage);
+      };
+    },
+    [sig],
+  );
+  const raw = useSyncExternalStore(
+    subscribe,
+    () => readRaw(sig.split("|")),
+    () => null,
+  );
+  // `fn` and `fallback` are usually inline; the snapshot string is the real
+  // dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => (raw == null ? fallback : fn()), [raw]);
 }
 
 export const STORAGE_KEYS = K;

@@ -2,108 +2,71 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import type { MarketRef } from "@/lib/storage";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+
 import type { MarketSnapshot } from "@/lib/types";
 import { usePolling } from "@/hooks/use-polling";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { MarketStar } from "./star-button";
 import { formatCompact, formatFiat, formatPct } from "@/lib/format";
 import { getFiat } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 
 /**
- * Compact live card for a single watchlisted market. Polls at 30s (workspace
- * is many cards so we don't want to hammer Binance). Links through to the
- * Live Markets page preset on this pair.
+ * Compact live card for one watchlisted market. Polls every 30s (the
+ * workspace can hold many cards) and links to the Markets page for the pair.
  */
-export function WatchlistMarketCard({ ref }: { ref: MarketRef }) {
+export function WatchlistMarketCard({ market }: { market: { asset: string; fiat: string } }) {
   const url = useMemo(
-    () => `/api/p2p/market?asset=${ref.asset}&fiat=${ref.fiat}&rows=10`,
-    [ref.asset, ref.fiat],
+    () => `/api/p2p/market?asset=${market.asset}&fiat=${market.fiat}&rows=10`,
+    [market.asset, market.fiat],
   );
-  const { data, loading } = usePolling<MarketSnapshot>(url, {
-    intervalMs: 30_000,
-  });
+  const { data, loading } = usePolling<MarketSnapshot>(url, { intervalMs: 30_000 });
 
-  const fiat = getFiat(ref.fiat);
-  const symbol = fiat?.symbol ?? ref.fiat;
+  const fiat = getFiat(market.fiat);
+  const symbol = fiat?.symbol ?? market.fiat;
 
   const bid = data?.buy.bestPrice ?? null;
   const ask = data?.sell.bestPrice ?? null;
   const spreadPct = data?.spreadPct ?? null;
-  const depth =
-    data != null
-      ? (data.buy.totalAvailable ?? 0) + (data.sell.totalAvailable ?? 0)
-      : null;
+  const depth = data != null ? (data.buy.totalAvailable ?? 0) + (data.sell.totalAvailable ?? 0) : null;
 
   return (
-    <Link
-      href={`/?asset=${ref.asset}&fiat=${ref.fiat}`}
-      className="group block"
-    >
-      <Card className="card-lift border-border bg-card/60 transition-colors group-hover:border-primary/30">
-        <CardContent className="p-4">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-base">{fiat?.flag ?? "🏳"}</span>
-                <span className="font-mono text-sm font-semibold text-foreground">
-                  {ref.asset}/{ref.fiat}
-                </span>
-              </div>
-              <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                {fiat?.name ?? ref.fiat}
-              </div>
-            </div>
-            <MarketStar asset={ref.asset} fiat={ref.fiat} size="sm" />
+    <Card className="relative gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30">
+      <div className="flex items-start justify-between gap-2">
+        <Link
+          href={`/?asset=${market.asset}&fiat=${market.fiat}`}
+          className="min-w-0 after:absolute after:inset-0 after:content-['']"
+        >
+          <div className="font-mono text-sm font-semibold">
+            {market.asset}/{market.fiat}
           </div>
+          <div className="truncate text-xs text-muted-foreground">{fiat?.name ?? market.fiat}</div>
+        </Link>
+        <MarketStar asset={market.asset} fiat={market.fiat} size="md" className="relative z-10" />
+      </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {/* Buy Ads (publisher buying = retail sell context) → red.
-                Sell Ads (publisher selling = retail buy context) → green. */}
-            <PriceBlock
-              tone="sell"
-              label="BUY ADS"
-              value={bid}
-              symbol={symbol}
-              loading={loading && bid == null}
-            />
-            <PriceBlock
-              tone="buy"
-              label="SELL ADS"
-              value={ask}
-              symbol={symbol}
-              loading={loading && ask == null}
-            />
-          </div>
+      <div className="grid grid-cols-2 gap-3">
+        {/* Buy ads (publisher buying = you sell) → sell tint; sell ads → buy tint. */}
+        <PriceBlock tone="sell" label="Buy ads" value={bid} symbol={symbol} loading={loading && bid == null} />
+        <PriceBlock tone="buy" label="Sell ads" value={ask} symbol={symbol} loading={loading && ask == null} />
+      </div>
 
-          <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2.5 font-mono text-[10px] tabular-nums text-muted-foreground">
-            <span>
-              Spread{" "}
-              <span
-                className={cn(
-                  "text-foreground/80",
-                  spreadPct != null && spreadPct < 0.003
-                    ? "text-[color:var(--color-buy)]"
-                    : "",
-                )}
-              >
-                {spreadPct != null ? formatPct(spreadPct, { frac: 2 }) : "—"}
-              </span>
-            </span>
-            <span>
-              Depth{" "}
-              <span className="text-foreground/80">
-                {depth != null
-                  ? `${formatCompact(depth)} ${ref.asset}`
-                  : "—"}
-              </span>
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
+      <div className="flex items-center justify-between border-t pt-2.5 text-xs text-muted-foreground">
+        <span>
+          Spread{" "}
+          <span className="font-mono tabular-nums text-foreground">
+            {spreadPct != null ? formatPct(spreadPct, { frac: 2 }) : "—"}
+          </span>
+        </span>
+        <span>
+          Depth{" "}
+          <span className="font-mono tabular-nums text-foreground">
+            {depth != null ? `${formatCompact(depth)} ${market.asset}` : "—"}
+          </span>
+        </span>
+      </div>
+    </Card>
   );
 }
 
@@ -121,25 +84,21 @@ function PriceBlock({
   loading: boolean;
 }) {
   const Icon = tone === "buy" ? ArrowUpRight : ArrowDownRight;
-  const color =
-    tone === "buy"
-      ? "text-[color:var(--color-buy)]"
-      : "text-[color:var(--color-sell)]";
   return (
-    <div>
+    <div className="min-w-0">
       <div
         className={cn(
-          "flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider",
-          color,
+          "flex items-center gap-1 text-xs font-medium",
+          tone === "buy" ? "text-[color:var(--color-buy)]" : "text-[color:var(--color-sell)]",
         )}
       >
-        <Icon className="h-3 w-3" strokeWidth={2.25} />
+        <Icon className="size-3.5" />
         {label}
       </div>
       <div
         className={cn(
-          "mt-1 font-mono text-lg font-semibold tabular-nums leading-none",
-          value != null ? "text-foreground" : "text-muted-foreground/60",
+          "mt-1 truncate font-mono text-lg font-semibold leading-none tabular-nums",
+          value == null && "text-muted-foreground",
           loading && "animate-pulse",
         )}
       >

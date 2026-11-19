@@ -1,86 +1,71 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchBothSides, normalizeAds } from "@/lib/binance";
-import {
-  buildMarket,
-  mergeMerchantDirectory,
-  summarizeMerchants,
-} from "@/lib/analytics";
-import { resolveBankPayTypes } from "@/lib/constants";
-import { listAllKnownMerchants } from "@/lib/db/queries";
-
-export const revalidate = 20;
-export const dynamic = "force-dynamic";
+import { rateLimit } from "@/lib/guard";
+import { buildMerchantDirectory } from "@/lib/analytics";
+import { CACHE_PUBLIC_SHORT, errorResponse, parseMarketQuery } from "@/lib/api";
+import { merchantDirectoryData } from "@/lib/db/merchant-directory";
+import { getBook } from "@/lib/market-data";
+import { deriveMerchantTier } from "@/lib/merchant-tier";
+import { LIVE_DEEP_N } from "@/lib/live";
 
 /**
- * GET /api/merchants?asset=USDT&fiat=LKR
- *
- * Returns the full merchant directory: live counterparties on the current
- * book, merged with every merchant we've previously snapshotted for this
- * market. Inactive merchants carry their last-known stats.
+ * GET /api/merchants?exchange=binance[&publisher=merchant]
+ * Every merchant the 5-minute sweep has seen on this market. `isActive` =
+ * seen in the latest sweep; `askVsBest` / `bidVsBest` are per-side gaps to
+ * the best price among active merchants; `trustScore` is the reliability
+ * score from `lib/merchant-score.ts`. The live top-20 book only adds
+ * pay-method names. `book=1` also returns the full live book (every
+ * publisher, every bank rail, up to LIVE_DEEP_N ads a side) for the
+ * competitor compare on /merchants.
  */
 export async function GET(req: NextRequest) {
-  const sp = req.nextUrl.searchParams;
-  const asset = (sp.get("asset") ?? "USDT").toUpperCase();
-  const fiat = (sp.get("fiat") ?? "LKR").toUpperCase();
-  const rawPay = sp.get("payTypes") ?? "";
-  const paySelection = rawPay.split(",").map((s) => s.trim()).filter(Boolean);
-  const payTypes =
-    paySelection.length === 1
-      ? resolveBankPayTypes(paySelection[0])
-      : paySelection.length > 1
-        ? paySelection
-        : resolveBankPayTypes("");
-  const publisherType = sp.get("publisher") === "merchant" ? "merchant" : null;
-
+  const limited = await rateLimit(req, "read");
+  if (limited) return limited;
+  const { exchange, query } = parseMarketQuery(req);
+  const withBook = req.nextUrl.searchParams.get("book") === "1";
   try {
-    const [{ buy, sell }, known] = await Promise.all([
-      fetchBothSides({
-        asset,
-        fiat,
-        rows: 20,
-        payTypes,
-        publisherType,
-      }),
-      listAllKnownMerchants(asset, fiat).catch(() => []),
+    const [book, data, deep] = await Promise.all([
+      getBook(exchange, { ...query, payTypes: [] }).catch(() => null),
+      merchantDirectoryData(exchange, query.asset, query.fiat),
+      withBook
+        ? getBook(exchange, { asset: query.asset, fiat: query.fiat, publisherType: null }, LIVE_DEEP_N).catch(() => null)
+        : null,
     ]);
-
-    const ads = [
-      ...normalizeAds(buy, "BUY"),
-      ...normalizeAds(sell, "SELL"),
-    ];
-    const snapshot = buildMarket(asset, fiat, ads);
-    const marketMedian =
-      snapshot.sell.medianPrice ?? snapshot.buy.medianPrice ?? null;
-    const liveMerchants = summarizeMerchants(ads, marketMedian);
-    const nowTs = Math.floor(Date.now() / 1000);
-    const directory = mergeMerchantDirectory(
-      liveMerchants,
-      known,
-      marketMedian,
-      nowTs,
-    );
-
+    let directory = buildMerchantDirectory({
+      known: data.known,
+      latestSweepTs: data.latestSweepTs,
+      trackedHours7d: data.trackedHours7d,
+      liveAds: book ? [...book.buy, ...book.sell] : [],
+    });
+    if (query.publisherType === "merchant") {
+      directory = directory.filter(
+        (m) => deriveMerchantTier({ isMerchant: m.isMerchant, userIdentity: m.userIdentity, vipLevel: m.vipLevel }) != null,
+      );
+    }
+    const active = directory.filter((m) => m.isActive);
+    const best = (xs: (number | null)[], lowest: boolean) => {
+      const v = xs.filter((x): x is number => x != null && x > 0);
+      return v.length ? (lowest ? Math.min(...v) : Math.max(...v)) : null;
+    };
     return NextResponse.json(
       {
-        asset,
-        fiat,
-        fetchedAt: new Date().toISOString(),
-        marketMedian,
-        liveCount: liveMerchants.length,
-        knownCount: known.length,
+        exchange,
+        asset: query.asset,
+        fiat: query.fiat,
+        fetchedAt: new Date((data.latestSweepTs ?? Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+        latestSweepTs: data.latestSweepTs,
+        /** Per-side references the gaps are measured against. */
+        bestAsk: best(active.map((m) => m.bestSellPrice), true),
+        bestBid: best(active.map((m) => m.bestBuyPrice), false),
+        /** @deprecated always null; gaps are per side now. */
+        marketMedian: null,
+        liveCount: active.length,
+        knownCount: data.known.length,
         merchants: directory,
+        ...(withBook ? { book: deep ? { ads: [...deep.buy, ...deep.sell], ts: deep.ts } : null } : {}),
       },
-      {
-        headers: {
-          "Cache-Control": "public, s-maxage=20, stale-while-revalidate=60",
-        },
-      },
+      { headers: { "Cache-Control": CACHE_PUBLIC_SHORT } },
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json(
-      { error: message, asset, fiat },
-      { status: 502 },
-    );
+    return errorResponse(err);
   }
 }

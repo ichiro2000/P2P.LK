@@ -3,17 +3,15 @@
 import { Star } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import {
-  favouriteMerchants,
-  useStorageValue,
-  watchlistMarkets,
-  STORAGE_KEYS,
-} from "@/lib/storage";
+import { useFavouriteMerchants, useWatchlist } from "@/hooks/use-member-data";
+import { useExchange } from "@/components/shell/exchange-context";
+import type { ExchangeId } from "@/lib/exchanges/types";
 
 /**
  * Toggles a market or merchant in/out of the user's workspace lists.
  * Tiny UI footprint — a button that fills the star when active.
- * Fires a subtle toast on toggle so the user knows it stuck.
+ * Fires a subtle toast on toggle so the user knows it stuck. Members' lists
+ * sync to their account; guests' stay in this browser (useWatchlist etc).
  */
 export function MarketStar({
   asset,
@@ -26,16 +24,14 @@ export function MarketStar({
   size?: "sm" | "md";
   className?: string;
 }) {
-  const active = useStorageValue(
-    () => watchlistMarkets.has(asset, fiat),
-    [STORAGE_KEYS.markets],
-    false,
-  );
+  const watchlist = useWatchlist();
+  const active = watchlist.has(asset, fiat);
 
   function onClick(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    const nowActive = watchlistMarkets.toggle(asset, fiat);
+    if (watchlist.mode === "loading") return;
+    const nowActive = watchlist.toggle(asset, fiat);
     toast(
       nowActive
         ? `${asset}/${fiat} added to watchlist`
@@ -56,7 +52,7 @@ export function MarketStar({
       }
       className={cn(
         "inline-flex items-center justify-center rounded-md border border-border bg-card/50 text-muted-foreground transition-all",
-        "hover:border-primary/40 hover:text-foreground",
+        "hover:bg-muted hover:text-foreground",
         size === "sm" ? "h-7 w-7" : "h-8 w-8",
         active &&
           "border-[color:var(--color-warn)]/40 bg-[color:var(--color-warn)]/10 text-[color:var(--color-warn)]",
@@ -77,24 +73,27 @@ export function MerchantStar({
   name,
   asset,
   fiat,
+  exchange,
   className,
 }: {
   id: string;
   name: string;
   asset?: string;
   fiat?: string;
+  /** Defaults to the active exchange. */
+  exchange?: ExchangeId;
   className?: string;
 }) {
-  const active = useStorageValue(
-    () => favouriteMerchants.has(id),
-    [STORAGE_KEYS.merchants],
-    false,
-  );
+  const activeExchange = useExchange().exchange;
+  const ex = exchange ?? activeExchange;
+  const favourites = useFavouriteMerchants();
+  const active = favourites.has(ex, id);
 
   function onClick(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    const nowActive = favouriteMerchants.toggle({ id, name, asset, fiat });
+    if (favourites.mode === "loading") return;
+    const nowActive = favourites.toggle({ exchange: ex, id, name, asset, fiat });
     toast(
       nowActive
         ? `${name} saved to merchants`

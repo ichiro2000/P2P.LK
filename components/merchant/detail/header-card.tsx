@@ -1,199 +1,97 @@
 import { ExternalLink } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Stat } from "@/components/common/stat";
+import { Card } from "@/components/ui/card";
 import { MerchantStar } from "@/components/workspace/star-button";
+import { BlockMerchantButton } from "@/components/members/block-merchant-button";
+import type { ExchangeId } from "@/lib/exchanges/types";
 import { TierBadge } from "@/components/merchant/tier-badge";
+import { ShowcaseBadge, showcaseReason } from "@/components/merchant/showcase-badge";
 import { deriveMerchantTier } from "@/lib/merchant-tier";
-import {
-  formatCompact,
-  formatDuration,
-  formatFiat,
-  formatPct,
-  formatRelative,
-} from "@/lib/format";
+import type { ShowcaseFlag } from "@/lib/market-insights";
+import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type MerchantHeaderData = {
   id: string;
+  /** Public profile on the exchange this merchant was seen on. */
+  profileUrl: string;
+  exchangeLabel: string;
+  /** Exchange id, for favourites and the blocklist. */
+  exchange: ExchangeId;
   name: string;
   isMerchant: boolean;
   userIdentity: string | null;
   vipLevel: number | null;
   isActive: boolean;
-  ordersMonth: number | null;
-  completionRate: number | null;
-  avgReleaseSec: number | null;
-  bestBuyPrice: number | null;
-  bestSellPrice: number | null;
-  totalAvailableFiat: number | null;
-  buyAds: number | null;
-  sellAds: number | null;
   lastSeenTs: number;
-  marketMid: number | null;
   asset: string;
   fiat: string;
-  symbol: string;
-  trustScore: number;
+  showcase: ShowcaseFlag | null;
 };
 
-function binanceUrl(id: string) {
-  return `https://c2c.binance.com/en/advertiserDetail?advertiserNo=${encodeURIComponent(id)}`;
-}
-
+/** Identity block: name, tier, live status, favourite, block and exchange link. */
 export function MerchantHeaderCard({ m }: { m: MerchantHeaderData }) {
-  const merchantMid =
-    m.bestBuyPrice != null && m.bestSellPrice != null
-      ? (m.bestBuyPrice + m.bestSellPrice) / 2
-      : m.bestBuyPrice ?? m.bestSellPrice ?? null;
-  const premium =
-    merchantMid != null && m.marketMid != null && m.marketMid > 0
-      ? (merchantMid - m.marketMid) / m.marketMid
-      : null;
-  const ownSpread =
-    m.bestBuyPrice != null && m.bestSellPrice != null
-      ? m.bestSellPrice - m.bestBuyPrice
-      : null;
-
   return (
-    <Card className="border-border bg-card/60">
-      <CardContent className="flex flex-col gap-5 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="relative shrink-0">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-muted/50 font-mono text-sm font-medium text-muted-foreground">
-                {(m.name || "?").slice(0, 2).toUpperCase()}
-              </div>
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card",
-                  m.isActive
-                    ? "bg-[color:var(--color-buy)]"
-                    : "bg-muted-foreground/40",
-                )}
-              />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-lg font-semibold text-foreground">
-                  {m.name}
-                </h1>
-                <TierBadge
-                  tier={deriveMerchantTier({
-                    isMerchant: m.isMerchant,
-                    userIdentity: m.userIdentity,
-                    vipLevel: m.vipLevel,
-                  })}
-                  size="md"
-                  withLabel
-                />
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider",
-                    m.isActive
-                      ? "bg-[color:var(--color-buy-muted)] text-[color:var(--color-buy)]"
-                      : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {m.isActive ? "Active" : "Offline"}
-                </span>
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-                <span className="font-mono">{m.asset}/{m.fiat}</span>
-                <span className="text-muted-foreground/40">·</span>
-                <span
-                  className="truncate font-mono text-muted-foreground/70"
-                  title={m.id}
-                >
-                  {m.id}
-                </span>
-                <span className="text-muted-foreground/40">·</span>
-                <span>
-                  {m.isActive
-                    ? "Live on book"
-                    : `Last seen ${formatRelative(new Date(m.lastSeenTs * 1000))}`}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <MerchantStar
-              id={m.id}
-              name={m.name}
-              asset={m.asset}
-              fiat={m.fiat}
+    <Card className="gap-3 px-4 py-4">
+      <div className="flex items-start gap-3">
+        <span className="relative shrink-0" aria-hidden>
+          <span className="flex size-12 items-center justify-center rounded-full border border-border bg-muted font-mono text-sm text-muted-foreground">
+            {(m.name || "?").slice(0, 2).toUpperCase()}
+          </span>
+          <span
+            className={cn(
+              "absolute -right-0.5 -bottom-0.5 size-3 rounded-full border-2 border-card",
+              m.isActive ? "bg-[color:var(--color-buy)]" : "bg-muted-foreground/40",
+            )}
+          />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h2 className="min-w-0 truncate text-lg font-semibold tracking-tight">{m.name}</h2>
+            <TierBadge
+              tier={deriveMerchantTier({ isMerchant: m.isMerchant, userIdentity: m.userIdentity, vipLevel: m.vipLevel })}
+              size="md"
+              withLabel
             />
-            <a
-              href={binanceUrl(m.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/50 px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary"
-            >
-              <ExternalLink className="h-3.5 w-3.5" strokeWidth={2} />
-              View on Binance
-            </a>
+            {m.showcase && <ShowcaseBadge flag={m.showcase} />}
           </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            <span className={cn(m.isActive && "text-[color:var(--color-buy)]")}>
+              {m.isActive ? "On the book now" : `Last seen ${formatRelative(new Date(m.lastSeenTs * 1000))}`}
+            </span>
+            {" · "}
+            {m.asset}/{m.fiat} on {m.exchangeLabel}
+          </p>
+          <p className="truncate font-mono text-[11px] text-muted-foreground" title={m.id}>
+            {m.id}
+          </p>
         </div>
-
-        <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-4 lg:grid-cols-6">
-          <Stat
-            label="Best buy"
-            value={
-              m.bestBuyPrice != null
-                ? formatFiat(m.bestBuyPrice, m.symbol, 2)
-                : "—"
-            }
-            footnote={
-              (m.buyAds ?? 0) > 0
-                ? `${m.buyAds} BUY ad${m.buyAds === 1 ? "" : "s"}`
-                : "No live BUY ads"
-            }
+        <div className="flex shrink-0 items-center gap-1">
+          <MerchantStar
+            id={m.id}
+            name={m.name}
+            asset={m.asset}
+            fiat={m.fiat}
+            exchange={m.exchange}
+            className="size-10 md:size-8"
           />
-          <Stat
-            label="Best sell"
-            value={
-              m.bestSellPrice != null
-                ? formatFiat(m.bestSellPrice, m.symbol, 2)
-                : "—"
-            }
-            footnote={
-              (m.sellAds ?? 0) > 0
-                ? `${m.sellAds} SELL ad${m.sellAds === 1 ? "" : "s"}`
-                : "No live SELL ads"
-            }
-          />
-          <Stat
-            label="Premium vs mkt"
-            value={premium == null ? "—" : formatPct(premium, { frac: 2, sign: true })}
-            footnote="merchant mid − market mid"
-          />
-          <Stat
-            label="Own spread"
-            value={ownSpread == null ? "—" : formatFiat(ownSpread, m.symbol, 2)}
-            footnote="sell − buy on their book"
-          />
-          <Stat
-            label="30d orders"
-            value={
-              m.ordersMonth != null ? formatCompact(m.ordersMonth) : "—"
-            }
-            footnote={
-              m.completionRate != null
-                ? `${formatPct(m.completionRate, { frac: 1 })} complete`
-                : undefined
-            }
-          />
-          <Stat
-            label="Trust score"
-            value={Math.round(m.trustScore).toString()}
-            footnote={
-              m.avgReleaseSec != null
-                ? `release ~${formatDuration(m.avgReleaseSec)}`
-                : "0–100 composite"
-            }
-          />
+          <BlockMerchantButton exchange={m.exchange} id={m.id} name={m.name} asset={m.asset} fiat={m.fiat} />
+          <a
+            href={m.profileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`View ${m.name} on ${m.exchangeLabel}`}
+            className="inline-flex size-10 items-center justify-center gap-1.5 rounded-lg border border-border text-sm text-muted-foreground transition-colors hover:text-foreground md:h-8 md:w-auto md:px-3"
+          >
+            <ExternalLink className="size-4" />
+            <span className="hidden md:inline">{m.exchangeLabel}</span>
+          </a>
         </div>
-      </CardContent>
+      </div>
+      {m.showcase && (
+        <p className="rounded-lg border border-[color:var(--color-warn)]/40 bg-[color:var(--color-warn)]/10 px-3 py-2 text-xs text-foreground">
+          {showcaseReason(m.showcase)}
+        </p>
+      )}
     </Card>
   );
 }

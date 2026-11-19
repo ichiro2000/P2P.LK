@@ -1,0 +1,13 @@
+# Cloudflare Workers Static Assets headers (OpenNext copies public/ into
+# .open-next/assets; this file is read by Cloudflare, not served).
+# Keep in sync with the /sw.js rule in next.config.ts.
+
+/sw.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /
+
+/offline.html
+  Cache-Control: no-cache
+
+/offline
+  Cache-Control: no-cache

@@ -1,73 +1,87 @@
-import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 import { getDb, schema } from "./client";
-import type { MerchantSnapshotRow, SuspiciousTakerRow } from "./schema";
-import { RANGES } from "./queries";
+import type { SuspiciousTakerRow } from "./schema";
+import { RANGES, latestSweepTs } from "./queries";
 import { ASSET, FIAT } from "@/lib/constants";
-
-export type SuspiciousReport = SuspiciousTakerRow;
-
-export async function listSuspicious(): Promise<SuspiciousReport[]> {
-  const db = await getDb();
-  return db
-    .select()
-    .from(schema.suspiciousTakers)
-    .where(eq(schema.suspiciousTakers.status, "active"))
-    .orderBy(desc(schema.suspiciousTakers.ts));
-}
+import type { ExchangeId } from "@/lib/exchanges";
 
 /**
- * All active reports for a single binance userId (advertiserNo). Returns an
- * empty array when the taker isn't in the registry — callers use `length > 0`
- * as the "flagged" signal.
+ * What the public registry (pages, /api/suspicious, the QR check) may show.
+ * Moderation fields stay out: `submittedBy` / `reviewedBy` are account ids
+ * (they'd tie reports to members and admins) and `reviewNote` is the
+ * moderator's internal note. Admin and "my reports" views read their own
+ * queries in registry-admin.ts.
  */
-export async function reportsForUser(
-  binanceUserId: string,
-): Promise<SuspiciousReport[]> {
-  const db = await getDb();
-  return db
-    .select()
-    .from(schema.suspiciousTakers)
-    .where(
-      and(
-        eq(schema.suspiciousTakers.binanceUserId, binanceUserId),
-        eq(schema.suspiciousTakers.status, "active"),
-      ),
-    )
-    .orderBy(desc(schema.suspiciousTakers.ts));
+function publicColumns() {
+  const t = schema.suspiciousTakers;
+  return {
+    id: t.id,
+    exchange: t.exchange,
+    ts: t.ts,
+    userId: t.userId,
+    profileUrl: t.profileUrl,
+    displayName: t.displayName,
+    reason: t.reason,
+    notes: t.notes,
+    reporter: t.reporter,
+    status: t.status,
+  };
 }
 
-/**
- * Most recent merchant snapshot we've ever recorded for a given advertiserNo
- * across any market. Used to map a QR-parsed userId → the merchant's nickname
- * so we can pre-fill the "Display name" field on the report form without
- * requiring manual entry. Returns `null` when the taker has never been seen
- * by our ingest worker (brand-new or non-LKR account).
- */
-export async function latestMerchantSnapshotAnyMarket(
-  merchantId: string,
-): Promise<MerchantSnapshotRow | null> {
+export type SuspiciousReport = Pick<
+  SuspiciousTakerRow,
+  "id" | "exchange" | "ts" | "userId" | "profileUrl" | "displayName" | "reason" | "notes" | "reporter" | "status"
+>;
+
+export async function listSuspicious(ex?: ExchangeId): Promise<SuspiciousReport[]> {
   const db = await getDb();
-  const rows = await db
-    .select()
-    .from(schema.merchantSnapshots)
-    .where(eq(schema.merchantSnapshots.merchantId, merchantId))
-    .orderBy(desc(schema.merchantSnapshots.ts))
+  const t = schema.suspiciousTakers;
+  return db
+    .select(publicColumns())
+    .from(t)
+    .where(ex ? and(eq(t.status, "active"), eq(t.exchange, ex)) : eq(t.status, "active"))
+    .orderBy(desc(t.ts));
+}
+
+/** Active reports for one user. Empty array = not flagged. */
+export async function reportsForUser(ex: ExchangeId, userId: string): Promise<SuspiciousReport[]> {
+  const db = await getDb();
+  const t = schema.suspiciousTakers;
+  return db
+    .select(publicColumns())
+    .from(t)
+    .where(and(eq(t.exchange, ex), eq(t.userId, userId), eq(t.status, "active")))
+    .orderBy(desc(t.ts));
+}
+
+/** Best known display name for a user id — from the merchant directory
+ *  (if they advertise) or the taker poll. Used to pre-fill report forms. */
+export async function knownNameForUser(ex: ExchangeId, userId: string): Promise<string | null> {
+  const db = await getDb();
+  const [m] = await db
+    .select({ name: schema.merchants.merchantName })
+    .from(schema.merchants)
+    .where(and(eq(schema.merchants.exchange, ex), eq(schema.merchants.merchantId, userId)))
+    .orderBy(desc(schema.merchants.lastSeenTs))
     .limit(1);
-  return rows[0] ?? null;
+  if (m?.name) return m.name;
+  const [t] = await db
+    .select({ name: schema.takerSnapshots.nickName })
+    .from(schema.takerSnapshots)
+    .where(and(eq(schema.takerSnapshots.exchange, ex), eq(schema.takerSnapshots.userId, userId)))
+    .orderBy(desc(schema.takerSnapshots.ts))
+    .limit(1);
+  return t?.name ?? null;
 }
 
 /**
- * Listing-activity summary for one flagged taker on the LKR book:
- *  - `isActive`        → appeared in the single most recent market tick
- *  - `lastSeenTs`      → timestamp of their most recent merchant snapshot
- *  - `ordersLatest`    → Binance's 30d order count on their latest snapshot
- *  - `ordersAtReport`  → the 30d order count at the time of the first report
- *  - `ordersDelta`     → ordersLatest − ordersAtReport (negative when some
- *                        counted orders have dropped out of the rolling 30d
- *                        window, positive when they keep trading)
- *  - `ticksSinceReport`→ how many listing ticks we've seen since the first
- *                        report was filed (0 when they've gone quiet)
- *  - `merchantName`    → their most recent Binance nickname
+ * Activity summary for a flagged user:
+ *  - isActive         listing in the latest merchant sweep, or their 30d
+ *                     order count rose in the last 24h
+ *  - lastSeenTs       latest observation (listing or profile poll)
+ *  - ordersLatest / ordersAtReport / ordersDelta   30d order count now vs at first report
+ *  - ticksSinceReport number of stat changes observed since the report
+ *  - merchantName     latest nickname
  */
 export type SuspiciousActivity = {
   isActive: boolean;
@@ -79,199 +93,152 @@ export type SuspiciousActivity = {
   merchantName: string | null;
 };
 
-export async function activityForSuspicious(
-  merchantId: string,
-  firstReportTs: number,
-  asset: string = ASSET,
-  fiat: string = FIAT.code,
-): Promise<SuspiciousActivity> {
+const EMPTY: SuspiciousActivity = {
+  isActive: false,
+  lastSeenTs: null,
+  ordersLatest: null,
+  ordersAtReport: null,
+  ordersDelta: null,
+  ticksSinceReport: 0,
+  merchantName: null,
+};
+
+/** Bulk activity — three queries total regardless of how many users. */
+export async function bulkActivityForSuspicious(
+  ex: ExchangeId,
+  items: Array<{ merchantId: string; firstReportTs: number }>,
+): Promise<Map<string, SuspiciousActivity>> {
+  const out = new Map<string, SuspiciousActivity>();
+  if (items.length === 0) return out;
+  const ids = [...new Set(items.map((i) => i.merchantId))];
   const db = await getDb();
 
-  const [latestTick] = await db
-    .select({ ts: sql<number>`max(${schema.merchantSnapshots.ts})` })
-    .from(schema.merchantSnapshots)
-    .where(
-      and(
-        eq(schema.merchantSnapshots.asset, asset),
-        eq(schema.merchantSnapshots.fiat, fiat),
-      ),
-    )
-    .limit(1);
-  const latestMarketTs = latestTick?.ts ?? null;
+  const [snaps, listings, sweepTs] = await Promise.all([
+    db
+      .select()
+      .from(schema.takerSnapshots)
+      .where(and(eq(schema.takerSnapshots.exchange, ex), inArray(schema.takerSnapshots.userId, ids)))
+      .orderBy(asc(schema.takerSnapshots.ts)),
+    db
+      .select()
+      .from(schema.merchants)
+      .where(and(eq(schema.merchants.exchange, ex), inArray(schema.merchants.merchantId, ids))),
+    latestSweepTs(ex, ASSET, FIAT.code),
+  ]);
 
-  const latest = await latestMerchantSnapshotAnyMarket(merchantId);
-
-  const atReportRows = await db
-    .select()
-    .from(schema.merchantSnapshots)
-    .where(
-      and(
-        eq(schema.merchantSnapshots.merchantId, merchantId),
-        eq(schema.merchantSnapshots.asset, asset),
-        eq(schema.merchantSnapshots.fiat, fiat),
-        gte(schema.merchantSnapshots.ts, firstReportTs),
-      ),
-    )
-    .orderBy(asc(schema.merchantSnapshots.ts))
-    .limit(1);
-  const firstSinceReport = atReportRows[0] ?? null;
-
-  const [countRow] = await db
-    .select({ c: sql<number>`count(*)` })
-    .from(schema.merchantSnapshots)
-    .where(
-      and(
-        eq(schema.merchantSnapshots.merchantId, merchantId),
-        eq(schema.merchantSnapshots.asset, asset),
-        eq(schema.merchantSnapshots.fiat, fiat),
-        gte(schema.merchantSnapshots.ts, firstReportTs),
-      ),
-    );
-
-  const ticksSinceReport = Number(countRow?.c ?? 0);
-
-  const isActive =
-    latest != null &&
-    latestMarketTs != null &&
-    latest.ts === latestMarketTs &&
-    latest.asset === asset &&
-    latest.fiat === fiat;
-
-  const ordersLatest = latest?.ordersMonth ?? null;
-  const ordersAtReport = firstSinceReport?.ordersMonth ?? null;
-  const ordersDelta =
-    ordersLatest != null && ordersAtReport != null
-      ? ordersLatest - ordersAtReport
-      : null;
-
-  return {
-    isActive,
-    lastSeenTs: latest?.ts ?? null,
-    ordersLatest,
-    ordersAtReport,
-    ordersDelta,
-    ticksSinceReport,
-    merchantName: latest?.merchantName ?? null,
-  };
+  const now = Math.floor(Date.now() / 1000);
+  for (const item of items) {
+    const mine = snaps.filter((s) => s.userId === item.merchantId);
+    const listing = listings.find((l) => l.merchantId === item.merchantId);
+    if (mine.length === 0 && !listing) {
+      out.set(item.merchantId, EMPTY);
+      continue;
+    }
+    const latest = mine.at(-1);
+    const sinceReport = mine.filter((s) => s.ts >= item.firstReportTs);
+    const prev = mine.at(-2);
+    const ordersLatest = latest?.ordersMonth ?? listing?.ordersMonth ?? null;
+    const ordersAtReport = sinceReport[0]?.ordersMonth ?? null;
+    const recentlyTraded =
+      latest != null &&
+      prev != null &&
+      now - latest.ts < 86400 &&
+      (latest.ordersMonth ?? 0) > (prev.ordersMonth ?? 0);
+    out.set(item.merchantId, {
+      isActive: (sweepTs != null && listing?.lastSeenTs === sweepTs) || recentlyTraded,
+      lastSeenTs: Math.max(latest?.ts ?? 0, listing?.lastSeenTs ?? 0) || null,
+      ordersLatest,
+      ordersAtReport,
+      ordersDelta:
+        ordersLatest != null && ordersAtReport != null ? ordersLatest - ordersAtReport : null,
+      ticksSinceReport: sinceReport.length,
+      merchantName: latest?.nickName ?? listing?.merchantName ?? null,
+    });
+  }
+  return out;
 }
 
-/**
- * Bulk version of `activityForSuspicious` — issues one query per taker but
- * fans them out in parallel. Registry-list volumes stay in the tens, so this
- * is fast enough and keeps the SQL obvious. Keys the result map by merchantId.
- */
-export async function bulkActivityForSuspicious(
-  items: Array<{ merchantId: string; firstReportTs: number }>,
-  asset: string = ASSET,
-  fiat: string = FIAT.code,
-): Promise<Map<string, SuspiciousActivity>> {
-  if (items.length === 0) return new Map();
-  const entries = await Promise.all(
-    items.map(async (i) => {
-      const activity = await activityForSuspicious(
-        i.merchantId,
-        i.firstReportTs,
-        asset,
-        fiat,
-      ).catch(
-        (): SuspiciousActivity => ({
-          isActive: false,
-          lastSeenTs: null,
-          ordersLatest: null,
-          ordersAtReport: null,
-          ordersDelta: null,
-          ticksSinceReport: 0,
-          merchantName: null,
-        }),
-      );
-      return [i.merchantId, activity] as const;
-    }),
-  );
-  return new Map(entries);
-}
-
-/**
- * Listing ticks for a flagged taker across the LKR book for the last N days.
- * Feeds the weekday × hour heatmap on the suspicious detail page so merchants
- * can see *when* the flagged taker is typically active.
- */
-export async function suspiciousHeatmapTicks(
+export async function activityForSuspicious(
+  ex: ExchangeId,
   merchantId: string,
+  firstReportTs: number,
+): Promise<SuspiciousActivity> {
+  const map = await bulkActivityForSuspicious(ex, [{ merchantId, firstReportTs }]);
+  return map.get(merchantId) ?? EMPTY;
+}
+
+/** Observation timestamps (profile changes + hours listed) for the weekday ×
+ *  hour heatmap on the detail page. */
+export async function suspiciousHeatmapTicks(
+  ex: ExchangeId,
+  userId: string,
   windowSec: number = RANGES["30d"],
-  asset: string = ASSET,
-  fiat: string = FIAT.code,
 ): Promise<number[]> {
   const db = await getDb();
   const since = Math.floor(Date.now() / 1000) - windowSec;
-  const rows = await db
-    .select({ ts: schema.merchantSnapshots.ts })
-    .from(schema.merchantSnapshots)
-    .where(
-      and(
-        eq(schema.merchantSnapshots.merchantId, merchantId),
-        eq(schema.merchantSnapshots.asset, asset),
-        eq(schema.merchantSnapshots.fiat, fiat),
-        gte(schema.merchantSnapshots.ts, since),
+  const [snaps, hours] = await Promise.all([
+    db
+      .select({ ts: schema.takerSnapshots.ts })
+      .from(schema.takerSnapshots)
+      .where(
+        and(
+          eq(schema.takerSnapshots.exchange, ex),
+          eq(schema.takerSnapshots.userId, userId),
+          gte(schema.takerSnapshots.ts, since),
+        ),
       ),
-    )
-    .orderBy(asc(schema.merchantSnapshots.ts));
-  return rows.map((r) => r.ts);
+    db
+      .select({ ts: schema.merchantHourly.hourTs })
+      .from(schema.merchantHourly)
+      .where(
+        and(
+          eq(schema.merchantHourly.exchange, ex),
+          eq(schema.merchantHourly.merchantId, userId),
+          gte(schema.merchantHourly.hourTs, since),
+        ),
+      ),
+  ]);
+  return [...snaps, ...hours].map((r) => r.ts).sort((a, b) => a - b);
 }
 
-/**
- * Order-count history (30d rolling from Binance) for a flagged taker. Used on
- * the suspicious detail page to chart whether they keep trading despite being
- * flagged — a rising line is the clearest "still scamming" signal.
- */
+/** 30d order count / completion history for a flagged user. */
 export async function suspiciousOrderHistory(
-  merchantId: string,
+  ex: ExchangeId,
+  userId: string,
   windowSec: number = RANGES["30d"],
-  asset: string = ASSET,
-  fiat: string = FIAT.code,
 ): Promise<Array<{ ts: number; ordersMonth: number | null; completionRate: number | null }>> {
   const db = await getDb();
   const since = Math.floor(Date.now() / 1000) - windowSec;
-  const rows = await db
-    .select({
-      ts: schema.merchantSnapshots.ts,
-      ordersMonth: schema.merchantSnapshots.ordersMonth,
-      completionRate: schema.merchantSnapshots.completionRate,
-    })
-    .from(schema.merchantSnapshots)
-    .where(
-      and(
-        eq(schema.merchantSnapshots.merchantId, merchantId),
-        eq(schema.merchantSnapshots.asset, asset),
-        eq(schema.merchantSnapshots.fiat, fiat),
-        gte(schema.merchantSnapshots.ts, since),
-      ),
-    )
-    .orderBy(asc(schema.merchantSnapshots.ts));
-  return rows;
+  const t = schema.takerSnapshots;
+  return db
+    .select({ ts: t.ts, ordersMonth: t.ordersMonth, completionRate: t.completionRate })
+    .from(t)
+    .where(and(eq(t.exchange, ex), eq(t.userId, userId), gte(t.ts, since)))
+    .orderBy(asc(t.ts));
 }
 
 export async function addReport(input: {
-  binanceUserId: string;
+  exchange: ExchangeId;
+  userId: string;
   profileUrl: string;
   displayName: string | null;
   reason: string;
   notes: string | null;
   reporter: string | null;
-}): Promise<SuspiciousReport> {
+  /** "active" for admins (publish now), "pending" for member submissions. */
+  status: "active" | "pending";
+  submittedBy: string;
+}): Promise<SuspiciousTakerRow> {
   const db = await getDb();
-  const row = {
-    ts: Math.floor(Date.now() / 1000),
-    binanceUserId: input.binanceUserId,
-    profileUrl: input.profileUrl,
-    displayName: input.displayName,
-    reason: input.reason,
-    notes: input.notes,
-    reporter: input.reporter,
-    status: "active" as const,
-  };
+  const now = Math.floor(Date.now() / 1000);
   const [inserted] = await db
     .insert(schema.suspiciousTakers)
-    .values(row)
+    .values({
+      ...input,
+      ts: now,
+      // Admin posts are reviewed by definition.
+      ...(input.status === "active" ? { reviewedBy: input.submittedBy, reviewedTs: now } : {}),
+    })
     .returning();
   return inserted;
 }

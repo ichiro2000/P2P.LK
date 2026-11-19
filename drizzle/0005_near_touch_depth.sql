@@ -1,0 +1,24 @@
+ALTER TABLE `market_hourly` ADD `avg_bid_depth_05pct` real;--> statement-breakpoint
+ALTER TABLE `market_hourly` ADD `avg_ask_depth_05pct` real;--> statement-breakpoint
+ALTER TABLE `market_hourly` ADD `avg_bid_depth_1pct` real;--> statement-breakpoint
+ALTER TABLE `market_hourly` ADD `avg_ask_depth_1pct` real;--> statement-breakpoint
+ALTER TABLE `market_hourly` ADD `avg_bid_depth_05pct_fiat` real;--> statement-breakpoint
+ALTER TABLE `market_hourly` ADD `avg_ask_depth_05pct_fiat` real;--> statement-breakpoint
+ALTER TABLE `market_hourly` ADD `avg_bid_depth_1pct_fiat` real;--> statement-breakpoint
+ALTER TABLE `market_hourly` ADD `avg_ask_depth_1pct_fiat` real;--> statement-breakpoint
+ALTER TABLE `market_hourly` ADD `avg_merchant_best_bid` real;--> statement-breakpoint
+ALTER TABLE `market_hourly` ADD `avg_merchant_best_ask` real;--> statement-breakpoint
+ALTER TABLE `market_snapshots` ADD `bid_depth_05pct` real;--> statement-breakpoint
+ALTER TABLE `market_snapshots` ADD `ask_depth_05pct` real;--> statement-breakpoint
+ALTER TABLE `market_snapshots` ADD `bid_depth_1pct` real;--> statement-breakpoint
+ALTER TABLE `market_snapshots` ADD `ask_depth_1pct` real;--> statement-breakpoint
+ALTER TABLE `market_snapshots` ADD `bid_depth_05pct_fiat` real;--> statement-breakpoint
+ALTER TABLE `market_snapshots` ADD `ask_depth_05pct_fiat` real;--> statement-breakpoint
+ALTER TABLE `market_snapshots` ADD `bid_depth_1pct_fiat` real;--> statement-breakpoint
+ALTER TABLE `market_snapshots` ADD `ask_depth_1pct_fiat` real;--> statement-breakpoint
+ALTER TABLE `market_snapshots` ADD `merchant_best_bid` real;--> statement-breakpoint
+ALTER TABLE `market_snapshots` ADD `merchant_best_ask` real;--> statement-breakpoint
+ALTER TABLE `merchant_snapshots` ADD `bid_available` real;--> statement-breakpoint
+ALTER TABLE `merchant_snapshots` ADD `ask_available` real;--> statement-breakpoint
+ALTER TABLE `merchants` ADD `bid_available` real;--> statement-breakpoint
+ALTER TABLE `merchants` ADD `ask_available` real;

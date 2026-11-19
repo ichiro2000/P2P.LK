@@ -1,199 +1,185 @@
-import { Topbar } from "@/components/shell/topbar";
-import { SectionHeader } from "@/components/common/section-header";
-import { LiveDot } from "@/components/common/live-dot";
-import { Reveal } from "@/components/common/reveal";
-import { Card, CardContent } from "@/components/ui/card";
-import { Stat } from "@/components/common/stat";
-import { MarketStar } from "@/components/workspace/star-button";
-import {
-  listMarketSnapshots,
-  marketSummary,
-  listTrackedMarkets,
-  RANGES,
-  type RangeKey,
-} from "@/lib/db/queries";
-import { ASSET, FIAT } from "@/lib/constants";
-import { FilterBar, type FilterState } from "@/components/market/filter-bar";
-import { PriceChart } from "@/components/historical/price-chart";
-import { DepthChart } from "@/components/historical/depth-chart";
-import { PriceDistribution } from "@/components/historical/price-distribution";
-import { RangeTabs } from "@/components/historical/range-tabs";
-import { Empty } from "@/components/common/empty";
+import { pageMetadata } from "@/lib/seo";
 import { Clock } from "lucide-react";
+import { Topbar } from "@/components/shell/topbar";
+import { LiveDot } from "@/components/common/live-dot";
+import { MarketStar } from "@/components/workspace/star-button";
+import { Empty } from "@/components/common/empty";
+import { KpiCard } from "@/components/common/kpi-card";
+import { KpiGrid, PageBody, PageHeader } from "@/components/common/page";
+import { RangeTabs } from "@/components/historical/range-tabs";
+import { HistoryCharts } from "@/components/historical/history-charts";
+import { getExchange } from "@/lib/exchanges";
+import { getActiveExchange } from "@/lib/exchange-server";
+import { freshness, listTrackedMarkets, parseRange } from "@/lib/db/queries";
+import { downsampleBy, historyBundle } from "@/lib/history";
+import { marketRegime, type Regime } from "@/lib/regime";
+import { bestTime, type BestTime } from "@/lib/best-time";
+import { RegimeBadge } from "@/components/historical/regime-badge";
+import { BestTimeCard } from "@/components/historical/best-time";
+import { AsOf } from "@/components/common/as-of";
+import { gateRange } from "@/lib/member-gate";
+import { ASSET, FIAT } from "@/lib/constants";
 import { formatCompact, formatFiat, formatPct, formatSLT } from "@/lib/format";
 
-export const metadata = { title: "Historical" };
+export const metadata = pageMetadata({
+  title: "USDT/LKR Price History: Binance & Bybit P2P Charts",
+  description: "USDT to LKR price history from Binance P2P and Bybit P2P: best bid and ask, spread and order-book depth recorded every minute, with candles and hourly rollups.",
+  path: "/historical",
+});
 export const dynamic = "force-dynamic";
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
 
-function parseFilters(
-  sp: Record<string, string | string[] | undefined>,
-): FilterState {
-  return {
-    asset: ASSET,
-    fiat: FIAT.code,
-    payType: String(sp.payType ?? ""),
-    merchantType: String(sp.merchantType ?? "merchant") === "all" ? "all" : "merchant",
-  };
-}
+const CANDLE_LABEL: Record<string, string> = {
+  "300": "5 min",
+  "900": "15 min",
+  "3600": "1 hour",
+  "10800": "3 hours",
+  "43200": "12 hours",
+};
 
-export default async function HistoricalPage({
-  searchParams,
-}: {
-  searchParams: SP;
-}) {
+export default async function HistoricalPage({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
-  const filters = parseFilters(sp);
-  const rangeKey = String(sp.range ?? "24h") as RangeKey;
-  const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
+  const ex = await getActiveExchange();
+  const adapter = getExchange(ex);
+  // 7d/30d are members only: guests get 24h, decided on the server.
+  const { range, member } = await gateRange(parseRange(sp.range), "24h");
 
-  const [snapshots, summary, tracked] = await Promise.all([
-    listMarketSnapshots(filters.asset, filters.fiat, range),
-    marketSummary(filters.asset, filters.fiat, range),
-    listTrackedMarkets("30d"),
+  const [bundle, tracked, regime, best] = await Promise.all([
+    historyBundle(ex, ASSET, FIAT.code, range),
+    listTrackedMarkets(ex, "30d"),
+    marketRegime(ex, ASSET, FIAT.code).catch((err): Regime | null => {
+      console.error("[historical] regime", err);
+      return null;
+    }),
+    bestTime(ex, ASSET, FIAT.code).catch((err): BestTime | null => {
+      console.error("[historical] best time", err);
+      return null;
+    }),
   ]);
+  const { points, summary, candles, compare } = bundle;
+  const otherLabel = compare ? getExchange(compare.exchange).label : ex === "binance" ? "Bybit" : "Binance";
 
   const symbol = FIAT.symbol;
-  const subtitle = `${ASSET} / ${FIAT.code} · ${FIAT.name}`;
-
-  const mids = snapshots
-    .map((s) => s.mid)
-    .filter((v): v is number => v != null);
-
-  const latest = snapshots[snapshots.length - 1];
-  const first = snapshots[0];
-
-  const change =
-    first?.mid != null && latest?.mid != null
-      ? (latest.mid - first.mid) / first.mid
-      : null;
+  const mids = points.map((p) => p.mid).filter((v): v is number => v != null);
+  const firstMid = mids[0];
+  const lastMid = mids[mids.length - 1];
+  const change = firstMid != null && lastMid != null ? (lastMid - firstMid) / firstMid : null;
+  const fresh = freshness(bundle.latestTs);
+  const hasData = points.some((p) => p.samples > 0);
+  // Latest bucket that has data (the grid runs to now, so the very last
+  // bucket can be empty for a minute).
+  const latest = [...points].reverse().find((p) => p.samples > 0);
+  const sparkOf = (k: "mid" | "spreadPct" | "askDepth1") => downsampleBy(points, 48, (p) => p[k]).map((p) => p[k]);
 
   return (
     <>
-      <Topbar title="Historical" subtitle={subtitle}>
-        <MarketStar asset={filters.asset} fiat={filters.fiat} />
+      <Topbar title="Historical" subtitle={`${ASSET} / ${FIAT.code} · ${adapter.label}`}>
+        <MarketStar asset={ASSET} fiat={FIAT.code} />
         <LiveDot label="Ingesting" className="hidden sm:inline-flex" />
       </Topbar>
 
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        <SectionHeader
-          kicker="Time series"
-          title={`${filters.asset}/${filters.fiat} over ${range}`}
-          description="Prices, spreads and depth captured every few minutes by our ingest worker. Switch the range tabs to zoom out."
-          right={<RangeTabs value={range} />}
+      <PageBody>
+        <PageHeader
+          eyebrow={`${adapter.label} · time series`}
+          title={`${ASSET}/${FIAT.code} over ${range}`}
+          description="Prices, spread and depth recorded every minute, in Sri Lanka time. Long ranges use hourly rollups. Gaps mean no data was recorded. Switch to candles, or overlay the other exchange."
+          actions={<RangeTabs value={range} member={member} />}
         />
 
-        <FilterBar initial={filters} />
+        {regime && <RegimeBadge regime={regime} />}
 
-        {snapshots.length === 0 ? (
+        {!hasData ? (
           <Empty
             icon={Clock}
-            title="No history for this market yet"
+            title={`No ${adapter.label} history for ${range} yet`}
             description={
               tracked.length === 0
-                ? "The ingest worker hasn't run. Start it with `npm run ingest:loop` to accumulate snapshots, or deploy and let Vercel Cron tick every 5 minutes."
-                : `Tracked markets: ${tracked.map((t) => `${t.asset}/${t.fiat}`).join(", ")}. Switch the filter to one of those.`
+                ? "The collector hasn't stored any snapshots for this exchange yet. Data appears within a minute of the first run."
+                : "Nothing was recorded in this window. Try a longer range."
             }
           />
         ) : (
           <>
-            <Reveal>
-              <Card className="border-border bg-card/60">
-                <CardContent className="grid grid-cols-2 gap-x-6 gap-y-5 p-5 md:grid-cols-4">
-                  <Stat
-                    label="Current mid"
-                    value={
-                      latest?.mid != null
-                        ? formatFiat(latest.mid, symbol, 2)
-                        : "—"
-                    }
-                    delta={
-                      change != null
-                        ? { value: change, format: "pct" }
-                        : undefined
-                    }
-                    footnote={`${snapshots.length} ticks in range`}
-                  />
-                  <Stat
-                    label={`${range} average`}
-                    value={
-                      summary?.avgMid != null
-                        ? formatFiat(summary.avgMid, symbol, 2)
-                        : "—"
-                    }
-                    footnote={
-                      summary?.minMid != null && summary?.maxMid != null
-                        ? `${formatFiat(summary.minMid, symbol, 2)} – ${formatFiat(summary.maxMid, symbol, 2)}`
-                        : undefined
-                    }
-                  />
-                  <Stat
-                    label="Average spread"
-                    value={
-                      summary?.avgSpreadPct != null
-                        ? formatPct(summary.avgSpreadPct, { frac: 2 })
-                        : "—"
-                    }
-                    footnote="Sell − Buy ads, mean"
-                  />
-                  <Stat
-                    label="Average depth"
-                    value={
-                      summary?.avgBidDepth != null &&
-                      summary?.avgAskDepth != null
-                        ? `${formatCompact(summary.avgBidDepth + summary.avgAskDepth)} ${filters.asset}`
-                        : "—"
-                    }
-                    footnote="Top-20 Buy + Sell ads"
-                  />
-                </CardContent>
-              </Card>
-            </Reveal>
-
-            <Reveal delay={70}>
-              <PriceChart
-                points={snapshots.map((s) => ({
-                  ts: s.ts,
-                  bid: s.bestBid,
-                  ask: s.bestAsk,
-                  mid: s.mid,
-                  spreadPct: s.spreadPct,
-                  bidDepth: s.bidDepth,
-                  askDepth: s.askDepth,
-                }))}
-                symbol={symbol}
-                asset={filters.asset}
+            <KpiGrid>
+              <KpiCard
+                label="Mid now"
+                value={lastMid != null ? formatFiat(lastMid, symbol, 2) : "—"}
+                change={change}
+                changeLabel={range}
+                sub={<AsOf ts={bundle.latestTs} stale={fresh.stale} />}
+                spark={sparkOf("mid")}
               />
-            </Reveal>
+              <KpiCard
+                label={`${range} average`}
+                value={summary.avgMid != null ? formatFiat(summary.avgMid, symbol, 2) : "—"}
+                sub={
+                  summary.minMid != null && summary.maxMid != null
+                    ? `${formatFiat(summary.minMid, symbol, 2)} – ${formatFiat(summary.maxMid, symbol, 2)}`
+                    : undefined
+                }
+              />
+              <KpiCard
+                label="Average spread"
+                value={summary.avgSpreadPct != null ? formatPct(summary.avgSpreadPct, { frac: 2 }) : "—"}
+                sub={latest?.spreadPct != null ? `now ${formatPct(latest.spreadPct, { frac: 2 })}` : undefined}
+                spark={sparkOf("spreadPct")}
+                sparkTone="neutral"
+              />
+              <KpiCard
+                label="Sell ads within 1%"
+                value={summary.avgAskDepth1 != null ? `${formatCompact(summary.avgAskDepth1)} ${ASSET}` : "—"}
+                sub={
+                  summary.avgBidDepth1 != null
+                    ? `${range} avg · buy ads ${formatCompact(summary.avgBidDepth1)} (declared)`
+                    : "near-price depth is new; no history yet"
+                }
+                spark={sparkOf("askDepth1")}
+                sparkTone="neutral"
+              />
+            </KpiGrid>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Reveal delay={110}>
-                <DepthChart
-                  points={snapshots.map((s) => ({
-                    ts: s.ts,
-                    bid: s.bestBid,
-                    ask: s.bestAsk,
-                    mid: s.mid,
-                    spreadPct: s.spreadPct,
-                    bidDepth: s.bidDepth,
-                    askDepth: s.askDepth,
-                  }))}
-                  asset={filters.asset}
-                />
-              </Reveal>
-              <Reveal delay={140}>
-                <PriceDistribution mids={mids} symbol={symbol} />
-              </Reveal>
-            </div>
+            <HistoryCharts
+              key={`${ex}-${range}-${points.length}`}
+              points={points.map((p) => ({
+                ts: p.ts,
+                bid: p.bid,
+                ask: p.ask,
+                mid: p.mid,
+                spreadPct: p.spreadPct,
+                bidDepth: p.bidDepth,
+                askDepth: p.askDepth,
+                bidDepth1: p.bidDepth1,
+                askDepth1: p.askDepth1,
+                bidDepth05: p.bidDepth05,
+                askDepth05: p.askDepth05,
+              }))}
+              ma={bundle.ma}
+              compare={compare?.points ?? null}
+              candles={candles}
+              exLabel={adapter.label}
+              otherLabel={otherLabel}
+              asset={ASSET}
+              candleLabel={CANDLE_LABEL[String(bundle.candleSec)] ?? `${bundle.candleSec / 60} min`}
+            />
 
-            <div className="pt-1 text-[11px] text-muted-foreground">
-              {snapshots.length} snapshots since{" "}
-              {formatSLT(first?.ts)} SLT
-            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {formatCompactCount(summary.count)} samples · {points.length} points ({bucketLabel(bundle.bucketSec)}) since{" "}
+              {formatSLT(points[0]?.ts)} SLT
+            </p>
+
+            {best && <BestTimeCard data={best} exLabel={adapter.label} />}
           </>
         )}
-      </div>
+      </PageBody>
     </>
   );
+}
+
+function bucketLabel(sec: number) {
+  return sec < 3600 ? `${sec / 60}-min` : `${sec / 3600}-hour`;
+}
+
+function formatCompactCount(n: number) {
+  return n >= 10_000 ? formatCompact(n) : String(n);
 }

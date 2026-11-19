@@ -1,0 +1,35 @@
+# P2P.LK
+
+> P2P.LK is an independent market-data site for Sri Lanka's USDT/LKR peer-to-peer market. It tracks the Binance P2P and Bybit P2P order books for LKR bank transfers around the clock and shows the best buy and sell prices, spread, order-book depth, merchant reliability, liquidity by hour and anomalies. It also publishes the Central Bank of Sri Lanka (CBSL) indicative USD/LKR rate, bank TT buying and selling rates, and the Google USD/LKR mid-market rate, so the P2P premium over the official dollar is visible. Free to read; no trading happens on P2P.LK.
+
+## What it is
+
+- Best for: Sri Lankan P2P traders and merchants who buy or sell USDT for LKR by bank transfer, and anyone checking the "USDT to LKR rate today".
+- Coverage: USDT/LKR only, bank-transfer payment methods only, on Binance P2P and Bybit P2P.
+- Freshness: order books are captured every minute and merchant profiles every 5 minutes; CBSL and bank rates are collected a few times a day; the Google USD/LKR rate is checked through the day.
+- Not financial advice: prices are the best advertised P2P ads, not a quote for size. P2P.LK does not hold funds or broker trades.
+- Language: English (en-LK). Times are Sri Lanka Time (Asia/Colombo, UTC+05:30).
+
+## Key pages
+
+- [Live markets](https://p2p.lk/): Live USDT/LKR best buy and sell prices, spread, depth and the ads on the book for the selected exchange.
+- [Exchange rates](https://p2p.lk/rates): CBSL indicative USD/LKR, bank TT rates for 24 currencies, Google USD/LKR and the USDT P2P premium.
+- [Merchants](https://p2p.lk/merchants): Every advertiser seen on the LKR bank-transfer book, ranked by a reliability score (completion, 30-day volume, presence, tenure).
+- [Compare](https://p2p.lk/compare): Binance vs Bybit side by side: best prices, spread, depth and market share.
+- [Historical](https://p2p.lk/historical): Price, spread and depth history for USDT/LKR.
+- [Arbitrage](https://p2p.lk/arbitrage): Cross-exchange and cross-payment-method price gaps with a profit-per-cycle calculator.
+- [Liquidity](https://p2p.lk/liquidity): Order-book depth by hour of day and slippage for a given trade size.
+- [Risk](https://p2p.lk/risk): Market anomalies and merchant behaviour signals.
+- [Suspicious takers](https://p2p.lk/suspicious): A community registry where merchants report takers; individual reports are not indexed.
+
+## How the numbers are made
+
+- "Buy USDT" price = the cheapest sell ad; "Sell USDT" price = the highest buy ad. By default only verified merchants' ads count.
+- Spread = best ask minus best bid. Depth = the sum of LKR available on the top ads.
+- P2P premium = P2P price divided by the reference rate (CBSL, bank TT or Google) minus 1. 1 USDT is treated as about 1 USD.
+- Merchant reliability score (0 to 100) combines a confidence-adjusted completion rate, 30-day orders, how often the merchant was on the book in the last 7 days, and how long we have seen them.
+
+## Optional
+
+- [Sitemap](https://p2p.lk/sitemap.xml)
+- Members (free account) get a dashboard, server-side price alerts and CSV reports at https://p2p.lk/sign-up

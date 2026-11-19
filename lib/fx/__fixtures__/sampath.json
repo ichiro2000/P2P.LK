@@ -1,0 +1,47 @@
+{
+ "success": true,
+ "data": [
+  {
+   "CurrCode": "USD",
+   "CurrName": "U.S. Dollar",
+   "RateWEF": "Thursday, November 19 2026, 08:17:33 AM",
+   "TTBUY": "328.75",
+   "TTSEL": "336.75"
+  },
+  {
+   "CurrCode": "GBP",
+   "CurrName": "U.K. Pound",
+   "RateWEF": "Thursday, November 19 2026, 08:17:33 AM",
+   "TTBUY": "430.4439",
+   "TTSEL": "443.7236"
+  },
+  {
+   "CurrCode": "EUR",
+   "CurrName": "Euro",
+   "RateWEF": "Thursday, November 19 2026, 08:17:33 AM",
+   "TTBUY": "358.639",
+   "TTSEL": "371.2814"
+  },
+  {
+   "CurrCode": "JPY",
+   "CurrName": "Japanese Yen",
+   "RateWEF": "Thursday, November 19 2026, 08:17:33 AM",
+   "TTBUY": "2.0511",
+   "TTSEL": "2.1239"
+  },
+  {
+   "CurrCode": "AUD",
+   "CurrName": "Australian Dollar",
+   "RateWEF": "Thursday, November 19 2026, 08:17:33 AM",
+   "TTBUY": "217.4054",
+   "TTSEL": "226.2834"
+  },
+  {
+   "CurrCode": "CNY",
+   "CurrName": "Chinese Yuan",
+   "RateWEF": "Thursday, November 19 2026, 08:17:33 AM",
+   "TTBUY": "49.0492",
+   "TTSEL": "50.7805"
+  }
+ ]
+}

@@ -1,0 +1,60 @@
+{
+ "ex": [
+  {
+   "currency": "US Dollars",
+   "currencyCode": "USD",
+   "buyingRate": 329.15,
+   "sellingRate": 336.4,
+   "status": "CURRENT",
+   "updated_on": "2026-11-19T04:12:01.000Z"
+  },
+  {
+   "currency": "UAE Dirham",
+   "currencyCode": "AED",
+   "buyingRate": 88.9638,
+   "sellingRate": 92.2944,
+   "status": "CURRENT",
+   "updated_on": "2026-11-19T04:12:03.000Z"
+  },
+  {
+   "currency": "Swiss Francs",
+   "currencyCode": "CHF",
+   "buyingRate": 386.7417,
+   "sellingRate": 400.3846,
+   "status": "CURRENT",
+   "updated_on": "2026-11-19T04:12:07.000Z"
+  },
+  {
+   "currency": "Japanese Yen",
+   "currencyCode": "JPY",
+   "buyingRate": 2.0581,
+   "sellingRate": 2.1148,
+   "status": "CURRENT",
+   "updated_on": "2026-11-19T04:12:18.000Z"
+  },
+  {
+   "currency": "Euro",
+   "currencyCode": "EUR",
+   "buyingRate": 358.9844,
+   "sellingRate": 370.0917,
+   "status": "CURRENT",
+   "updated_on": "2026-11-19T04:12:23.000Z"
+  },
+  {
+   "currency": "Chinese Yuan",
+   "currencyCode": "CNY",
+   "buyingRate": 49.2905,
+   "sellingRate": 51.5385,
+   "status": "CURRENT",
+   "updated_on": "2026-11-19T04:12:27.000Z"
+  },
+  {
+   "currency": "British Pounds",
+   "currencyCode": "GBP",
+   "buyingRate": 430.9029,
+   "sellingRate": 442.6644,
+   "status": "CURRENT",
+   "updated_on": "2026-11-19T04:12:30.000Z"
+  }
+ ]
+}

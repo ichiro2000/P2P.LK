@@ -1,31 +1,23 @@
 import { Topbar } from "@/components/shell/topbar";
-import { SectionHeader } from "@/components/common/section-header";
+import { PageBody, PageHeader } from "@/components/common/page";
+import { StorageBadge } from "@/components/members/storage-badge";
 import { WorkspacePanel } from "@/components/workspace/workspace-panel";
-import { Badge } from "@/components/ui/badge";
+import { privateMetadata } from "@/lib/seo";
 
-export const metadata = { title: "Workspace" };
+export const metadata = privateMetadata("Workspace", "follow");
 
 export default function WorkspacePage() {
   return (
     <>
-      <Topbar title="Workspace" subtitle="Your private dashboard">
-        <Badge
-          variant="outline"
-          className="hidden sm:inline-flex border-dashed bg-transparent text-[10px] text-muted-foreground/80"
-        >
-          Local
-        </Badge>
-      </Topbar>
-
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        <SectionHeader
-          kicker="Your workspace"
+      <Topbar title="Workspace" subtitle="Your private dashboard" />
+      <PageBody>
+        <PageHeader
           title="Markets, merchants and filters you care about"
-          description="Everything here lives in your browser only — no account needed. Star markets and merchants from anywhere in the app, save filter configurations, and come back here to jump straight to them."
+          description="Star markets and merchants anywhere in the app, save filters, and come back here to jump straight to them. No account needed: guests keep this in the browser, members get it synced to every device."
+          actions={<StorageBadge />}
         />
-
         <WorkspacePanel />
-      </div>
+      </PageBody>
     </>
   );
 }

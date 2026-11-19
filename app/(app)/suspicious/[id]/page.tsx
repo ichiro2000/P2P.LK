@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AlertTriangle, ArrowLeft, Check, ExternalLink, TrendingUp } from "lucide-react";
 import { Topbar } from "@/components/shell/topbar";
-import { SectionHeader } from "@/components/common/section-header";
-import { Reveal } from "@/components/common/reveal";
-import { Empty } from "@/components/common/empty";
-import { Card, CardContent } from "@/components/ui/card";
+import { KpiGrid, PageBody, PageHeader, PageSection } from "@/components/common/page";
+import { KpiCard } from "@/components/common/kpi-card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Stat } from "@/components/common/stat";
+import { buttonVariants } from "@/components/ui/button";
 import { ASSET, FIAT } from "@/lib/constants";
 import {
   activityForSuspicious,
@@ -16,509 +16,322 @@ import {
 } from "@/lib/db/suspicious";
 import { OrderTrendChart } from "@/components/suspicious/order-trend-chart";
 import { RemovalRequestForm } from "@/components/suspicious/removal-request-form";
-import { formatCompact, formatPct, formatSLT } from "@/lib/format";
-import {
-  AlertTriangle,
-  Check,
-  ExternalLink,
-  ShieldAlert,
-  TrendingUp,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
-import {
-  fetchBinanceAdvertiserPublic,
-  type BinanceAdvertiserPublic,
-} from "@/lib/qr-resolve";
+import { Callout, ReasonBadge, ReportItem } from "@/components/suspicious/parts";
+import { formatPct, formatSLT, formatCount } from "@/lib/format";
+import { fetchBinanceAdvertiserPublic, type BinanceAdvertiserPublic } from "@/lib/qr-resolve";
+import { NOINDEX, NOINDEX_NOFOLLOW, SITE_NAME } from "@/lib/seo";
+import type { Metadata } from "next";
 
-export const metadata = { title: "Suspicious taker · detail" };
 export const dynamic = "force-dynamic";
+
+/**
+ * Individual taker pages are `noindex` on purpose. They name a person on the
+ * strength of unverified community reports, so they must not rank for that
+ * person's nickname or user id; removal requests exist precisely because a
+ * report can be wrong. They stay crawlable (no robots.txt block) so Google
+ * can see the noindex. Merchants find them through the registry and the QR
+ * check; the registry list itself is indexed. The title still names the
+ * taker so a link shared between merchants previews usefully.
+ */
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id: raw } = await params;
+  const id = decodeURIComponent(raw);
+  const reports = await reportsForUser("binance", id).catch(() => []);
+  if (reports.length === 0) return { title: "Taker not found", robots: NOINDEX_NOFOLLOW };
+  const name = reports[0].displayName || "Unknown taker";
+  const n = reports.length;
+  const title = `Flagged taker: ${name} (${n} report${n === 1 ? "" : "s"})`;
+  const description = `Community reports from Sri Lankan P2P merchants about Binance taker ${name}. Check the reasons and recent activity before you trade.`;
+  return {
+    title,
+    description,
+    robots: NOINDEX,
+    openGraph: { title, description, siteName: SITE_NAME, type: "website" },
+    twitter: { card: "summary_large_image", title, description },
+  };
+}
 
 function binanceUrl(userId: string) {
   return `https://p2p.binance.com/en/advertiserDetail?advertiserNo=${encodeURIComponent(userId)}`;
 }
 
-export default async function SuspiciousDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function SuspiciousDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: raw } = await params;
   const id = decodeURIComponent(raw);
 
-  const reports = await reportsForUser(id);
-  if (reports.length === 0) {
-    notFound();
-  }
+  const reports = await reportsForUser("binance", id);
+  if (reports.length === 0) notFound();
 
-  // `reportsForUser` orders by ts DESC, so the first element is newest and the
-  // last is earliest. We need the earliest for "orders since flagged" math.
+  // `reportsForUser` is newest-first, so the last element is the first report.
   const firstReportTs = reports[reports.length - 1].ts;
 
-  const [activity, orderHistory, binanceLive] = await Promise.all([
-    activityForSuspicious(id, firstReportTs).catch(() => null),
-    suspiciousOrderHistory(id).catch(() => []),
-    // Live Binance fetch — public endpoint, no auth. Gives us verifications,
-    // join date, and all-time trade count that we don't store locally.
+  const [activity, orderHistory, binance] = await Promise.all([
+    activityForSuspicious("binance", id, firstReportTs).catch(() => null),
+    suspiciousOrderHistory("binance", id).catch(() => []),
+    // Live Binance fetch (public, no auth): verifications, join date and
+    // all-time trade count that we don't store locally.
     fetchBinanceAdvertiserPublic(id).catch(() => null),
   ]);
 
   const head = reports[0];
-  const displayName =
-    activity?.merchantName ??
-    binanceLive?.nickName ??
-    head.displayName ??
-    "Unknown taker";
+  const displayName = activity?.merchantName ?? binance?.nickName ?? head.displayName ?? "Unknown taker";
   const isActive = activity?.isActive ?? false;
   const ordersDelta = activity?.ordersDelta ?? null;
   const stillTrading = ordersDelta != null && ordersDelta > 0;
+  const n = reports.length;
 
   return (
     <>
-      <Topbar
-        title={displayName}
-        subtitle={`Flagged taker · ${ASSET}/${FIAT.code}`}
-      />
-
-      <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
-        <SectionHeader
-          kicker="Suspicious taker · detail"
-          title={displayName}
-          description="Every report filed against this taker, plus whether they're still active on the LKR book and whether their order count has kept climbing since the first flag."
+      <Topbar title={displayName} subtitle={`Flagged taker · ${ASSET}/${FIAT.code}`} />
+      <PageBody>
+        <PageHeader
+          eyebrow={
+            <Link href="/suspicious" className="inline-flex items-center gap-1 hover:text-foreground">
+              <ArrowLeft className="size-3.5" /> Registry
+            </Link>
+          }
+          title={
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span className="break-all">{displayName}</span>
+              <Badge
+                variant="outline"
+                className="border-[color:var(--color-sell)]/40 font-mono tabular-nums text-[color:var(--color-sell)]"
+              >
+                {n} report{n === 1 ? "" : "s"}
+              </Badge>
+            </span>
+          }
+          description={<ProfileMeta userId={id} binance={binance} />}
+          actions={
+            <a
+              href={binanceUrl(id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonVariants({ variant: "outline", className: "h-10 w-full sm:h-9 sm:w-auto" })}
+            >
+              <ExternalLink /> View on Binance
+            </a>
+          }
         />
 
         {isActive && (
-          <Reveal>
-            <div className="flex items-start gap-3 rounded-lg border border-[color:var(--color-sell)]/60 bg-[color:var(--color-sell-muted)] px-4 py-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[color:var(--color-sell)]" />
-              <div>
-                <div className="text-sm font-semibold text-[color:var(--color-sell)]">
-                  Active on the LKR book right now
-                </div>
-                <div className="mt-0.5 text-[12px] text-muted-foreground">
-                  This flagged taker appears in the most recent ingest tick. If
-                  you&apos;re trading now, decline their offer and warn your
-                  counterparties.
-                </div>
-              </div>
-            </div>
-          </Reveal>
+          <Callout tone="sell" icon={AlertTriangle} title="Active on the LKR book right now" role="alert">
+            This taker appears in the most recent ingest tick. If you&apos;re trading now, decline their offer and
+            warn your counterparties.
+          </Callout>
         )}
         {!isActive && stillTrading && (
-          <Reveal>
-            <div className="flex items-start gap-3 rounded-lg border border-[color:var(--color-warn)]/60 bg-card/50 px-4 py-3">
-              <TrendingUp className="mt-0.5 h-5 w-5 shrink-0 text-[color:var(--color-warn)]" />
-              <div>
-                <div className="text-sm font-semibold text-[color:var(--color-warn)]">
-                  Still trading after the first report
-                </div>
-                <div className="mt-0.5 text-[12px] text-muted-foreground">
-                  Their rolling 30d order count has grown by{" "}
-                  <span className="font-mono font-semibold">
-                    +{ordersDelta}
-                  </span>{" "}
-                  since{" "}
-                  <span className="font-mono">
-                    {formatSLT(firstReportTs)} SLT
-                  </span>
-                  . They may be offline right now but the book has seen them
-                  since.
-                </div>
-              </div>
-            </div>
-          </Reveal>
+          <Callout tone="warn" icon={TrendingUp} title="Still trading after the first report">
+            Their rolling 30-day order count has grown by{" "}
+            <span className="font-mono font-semibold text-foreground">+{ordersDelta}</span> since{" "}
+            <span className="font-mono">{formatSLT(firstReportTs)} SLT</span>. They may be offline now, but the
+            book has seen them since.
+          </Callout>
         )}
 
-        <Reveal delay={40}>
-          <HeaderCard
-            userId={id}
-            displayName={displayName}
-            isActive={isActive}
-            reportsCount={reports.length}
-            ordersLatest={activity?.ordersLatest ?? null}
-            ordersAtReport={activity?.ordersAtReport ?? null}
-            ordersDelta={ordersDelta}
-            ticksSinceReport={activity?.ticksSinceReport ?? 0}
-            binance={binanceLive}
-          />
-        </Reveal>
+        <Stats
+          binance={binance}
+          reportsCount={n}
+          ordersLatest={activity?.ordersLatest ?? null}
+          ordersAtReport={activity?.ordersAtReport ?? null}
+          ordersDelta={ordersDelta}
+          ticksSinceReport={activity?.ticksSinceReport ?? 0}
+        />
 
-        <Reveal delay={80}>
-          <OrderTrendChart
-            points={orderHistory}
-            firstReportTs={firstReportTs}
-          />
-        </Reveal>
+        <BinanceFacts binance={binance} />
 
-        <Reveal delay={140}>
+        <PageSection title="Order trend">
+          <OrderTrendChart points={orderHistory} firstReportTs={firstReportTs} />
+        </PageSection>
+
+        <PageSection title="Reports filed" description={`${n} report${n === 1 ? "" : "s"} on record, newest first.`}>
           <ReportsList reports={reports} />
-        </Reveal>
+        </PageSection>
 
-        <Reveal delay={180}>
-          <RemovalRequestForm
-            binanceUserId={id}
-            displayName={displayName}
-          />
-        </Reveal>
-
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground">
-          <span>{reports.length} report{reports.length === 1 ? "" : "s"} on record</span>
-          <Link
-            href="/suspicious"
-            className="inline-flex items-center gap-1.5 text-primary hover:underline"
-          >
-            ← Back to registry
-          </Link>
-        </div>
-      </div>
+        <PageSection>
+          <RemovalRequestForm binanceUserId={id} displayName={displayName} />
+        </PageSection>
+      </PageBody>
     </>
   );
 }
 
-function HeaderCard({
-  userId,
-  displayName,
-  isActive,
+function ProfileMeta({ userId, binance }: { userId: string; binance: BinanceAdvertiserPublic | null }) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+      <span className="font-mono">
+        {ASSET}/{FIAT.code}
+      </span>
+      <span aria-hidden>·</span>
+      <span className="font-mono break-all" title={userId}>
+        {userId}
+      </span>
+      {binance?.userIdentity && (
+        <>
+          <span aria-hidden>·</span>
+          <span className="font-mono">{binance.userIdentity.toLowerCase().replace(/_/g, " ")}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+function Stats({
+  binance,
   reportsCount,
   ordersLatest,
   ordersAtReport,
   ordersDelta,
   ticksSinceReport,
-  binance,
 }: {
-  userId: string;
-  displayName: string;
-  isActive: boolean;
+  binance: BinanceAdvertiserPublic | null;
   reportsCount: number;
   ordersLatest: number | null;
   ordersAtReport: number | null;
   ordersDelta: number | null;
   ticksSinceReport: number;
-  binance: BinanceAdvertiserPublic | null;
 }) {
-  // Derive account age in whole days from Binance's registerTime (ms).
-  // Fresh accounts are the single strongest scam signal — we flash the
-  // stat red under 30 days, amber under 90.
-  const accountAgeDays =
-    binance?.registerTime != null
-      ? Math.max(
-          0,
-          Math.floor((Date.now() - binance.registerTime) / 86_400_000),
-        )
-      : null;
-  const accountAgeTone: "red" | "amber" | "muted" =
-    accountAgeDays == null
-      ? "muted"
-      : accountAgeDays < 30
-        ? "red"
-        : accountAgeDays < 90
-          ? "amber"
-          : "muted";
+  // Fresh accounts are the strongest scam signal: red under 30 days, a
+  // warning note under 90.
+  const ageDays =
+    binance?.registerTime != null ? Math.max(0, Math.floor(msSince(binance.registerTime) / 86_400_000)) : null;
+  const ageSub =
+    ageDays == null
+      ? "needs Binance profile"
+      : ageDays < 30
+        ? "under 30 days · fresh account"
+        : ageDays < 90
+          ? "under 90 days · still new"
+          : "since registration";
+
+  const orders30 = ordersLatest ?? binance?.monthOrderCount ?? null;
+  const ordersSub =
+    ordersLatest != null ? "our snapshots" : binance?.monthOrderCount != null ? "live from Binance" : "rolling 30 days";
 
   return (
-    <Card className="border-border bg-card/60">
-      <CardContent className="flex flex-col gap-5 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="relative shrink-0">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[color:var(--color-sell)]/40 bg-[color:var(--color-sell-muted)] text-[color:var(--color-sell)]">
-                <ShieldAlert className="h-5 w-5" />
-              </div>
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card",
-                  isActive
-                    ? "bg-[color:var(--color-sell)] animate-pulse"
-                    : "bg-muted-foreground/40",
-                )}
-              />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-lg font-semibold text-foreground">
-                  {displayName}
-                </h1>
-                <Badge
-                  variant="outline"
-                  className="border-[color:var(--color-sell)]/40 text-[10px] font-semibold uppercase tracking-wider text-[color:var(--color-sell)]"
-                >
-                  {reportsCount} report{reportsCount === 1 ? "" : "s"}
-                </Badge>
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-                <span className="font-mono">{ASSET}/{FIAT.code}</span>
-                <span className="text-muted-foreground/40">·</span>
-                <span
-                  className="truncate font-mono text-muted-foreground/70"
-                  title={userId}
-                >
-                  {userId}
-                </span>
-                {binance?.userIdentity && (
-                  <>
-                    <span className="text-muted-foreground/40">·</span>
-                    <span className="font-mono text-muted-foreground/70">
-                      {binance.userIdentity.toLowerCase().replace(/_/g, " ")}
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <a
-              href={binanceUrl(userId)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/50 px-3 py-1.5 text-[12px] font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary"
-            >
-              <ExternalLink className="h-3.5 w-3.5" strokeWidth={2} />
-              View on Binance
-            </a>
-          </div>
-        </div>
+    <KpiGrid>
+      <KpiCard
+        label="Account age"
+        value={ageDays != null ? formatAgeDays(ageDays) : "—"}
+        tone={ageDays != null && ageDays < 30 ? "sell" : undefined}
+        sub={ageSub}
+      />
+      <KpiCard
+        label="All trades"
+        value={formatCount(binance?.allTradeCount)}
+        sub={binance?.allTradeCount != null ? "lifetime · Binance" : "needs Binance profile"}
+      />
+      <KpiCard label="Orders · 30 days" value={formatCount(orders30)} sub={ordersSub} />
+      <KpiCard
+        label="Completion · 30 days"
+        value={binance?.monthFinishRate != null ? formatPct(binance.monthFinishRate, { frac: 2 }) : "—"}
+        tone={binance?.monthFinishRate != null && binance.monthFinishRate < 0.9 ? "sell" : undefined}
+        sub={
+          binance?.monthFinishRate == null
+            ? "needs Binance profile"
+            : binance.monthFinishRate < 0.9
+              ? "below 90% · many cancels"
+              : "live from Binance"
+        }
+      />
+      <KpiCard
+        label="Orders at first report"
+        value={formatCount(ordersAtReport)}
+        sub={ordersAtReport == null ? "no snapshot then" : "closest snapshot"}
+      />
+      <KpiCard
+        label="Change since flagged"
+        value={ordersDelta == null ? "—" : `${ordersDelta > 0 ? "+" : ""}${ordersDelta}`}
+        tone={ordersDelta != null && ordersDelta > 0 ? "sell" : undefined}
+        sub="positive = still trading"
+      />
+      <KpiCard
+        label="Ticks since flag"
+        value={formatCount(ticksSinceReport)}
+        sub={ticksSinceReport > 0 ? "LKR listings after report" : "not relisted since"}
+      />
+      <KpiCard label="Reports" value={reportsCount} tone="sell" sub="active on record" />
+    </KpiGrid>
+  );
+}
 
-        <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-3 lg:grid-cols-7">
-          <Stat
-            label="Account age"
-            value={
-              <span
-                className={cn(
-                  accountAgeTone === "red" &&
-                    "text-[color:var(--color-sell)]",
-                  accountAgeTone === "amber" &&
-                    "text-[color:var(--color-warn)]",
-                )}
-              >
-                {accountAgeDays != null ? formatAgeDays(accountAgeDays) : "—"}
-              </span>
-            }
-            footnote={
-              accountAgeTone === "red"
-                ? "under 30 days — fresh account"
-                : accountAgeTone === "amber"
-                  ? "under 90 days — still new"
-                  : accountAgeDays != null
-                    ? "days since registration"
-                    : "needs Binance profile"
-            }
-          />
-          <Stat
-            label="All trades"
-            value={
-              binance?.allTradeCount != null
-                ? formatCompact(binance.allTradeCount)
-                : "—"
-            }
-            footnote={
-              binance?.allTradeCount != null
-                ? "lifetime · live from Binance"
-                : "needs Binance profile"
-            }
-          />
-          <Stat
-            label="Orders 30d (latest)"
-            value={
-              ordersLatest != null
-                ? formatCompact(ordersLatest)
-                : binance?.monthOrderCount != null
-                  ? formatCompact(binance.monthOrderCount)
-                  : "—"
-            }
-            footnote={
-              ordersLatest != null
-                ? "rolling 30d · our snapshots"
-                : binance?.monthOrderCount != null
-                  ? "rolling 30d · live from Binance"
-                  : "rolling 30d"
-            }
-          />
-          <Stat
-            label="30d completion rate"
-            value={
-              binance?.monthFinishRate != null
-                ? formatPct(binance.monthFinishRate, { frac: 2 })
-                : "—"
-            }
-            footnote={
-              binance?.monthFinishRate != null
-                ? binance.monthFinishRate < 0.9
-                  ? "below 90% — high cancellation rate"
-                  : "live from Binance"
-                : "needs Binance profile"
-            }
-          />
-          <Stat
-            label="Orders at first report"
-            value={ordersAtReport != null ? formatCompact(ordersAtReport) : "—"}
-            footnote={
-              ordersAtReport == null
-                ? "no snapshot at that time"
-                : "snapshot closest to flag date"
-            }
-          />
-          <Stat
-            label="Change since flagged"
-            value={
-              ordersDelta == null
-                ? "—"
-                : `${ordersDelta > 0 ? "+" : ""}${ordersDelta}`
-            }
-            footnote="positive → still trading"
-            delta={
-              ordersDelta != null
-                ? {
-                    value: ordersDelta,
-                    format: "abs",
-                    tone:
-                      ordersDelta > 0
-                        ? "sell"
-                        : ordersDelta < 0
-                          ? "buy"
-                          : "muted",
-                  }
-                : undefined
-            }
-          />
-          <Stat
-            label="Ticks since flag"
-            value={formatCompact(ticksSinceReport)}
-            footnote={
-              ticksSinceReport > 0
-                ? "LKR listing ticks after first report"
-                : "hasn't relisted on LKR since flag"
-            }
-          />
-        </div>
-
-        {binance &&
-          (binance.avgReleaseTimeSec != null ||
-            binance.avgPayTimeSec != null ||
-            binance.registerTime != null ||
-            binance.emailVerified != null ||
-            binance.mobileVerified != null ||
-            binance.kycVerified != null) && (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border/60 pt-4 text-[11px] text-muted-foreground">
-              {binance.registerTime != null && (
-                <span>
-                  Joined{" "}
-                  <span className="font-mono text-foreground">
-                    {formatSLT(new Date(binance.registerTime), {
-                      dateStyle: "medium",
-                    })}
-                  </span>
-                </span>
-              )}
-              {binance.avgReleaseTimeSec != null && (
-                <span>
-                  Avg release{" "}
-                  <span className="font-mono text-foreground">
-                    {formatDurationShort(binance.avgReleaseTimeSec)}
-                  </span>
-                </span>
-              )}
-              {binance.avgPayTimeSec != null && (
-                <span>
-                  Avg pay{" "}
-                  <span className="font-mono text-foreground">
-                    {formatDurationShort(binance.avgPayTimeSec)}
-                  </span>
-                </span>
-              )}
-              <div className="flex flex-wrap items-center gap-1.5">
-                {binance.emailVerified && <VerificationPill label="Email" />}
-                {binance.mobileVerified && <VerificationPill label="SMS" />}
-                {binance.kycVerified && <VerificationPill label="ID" />}
-              </div>
-            </div>
-          )}
-      </CardContent>
+function BinanceFacts({ binance }: { binance: BinanceAdvertiserPublic | null }) {
+  if (
+    !binance ||
+    (binance.avgReleaseTimeSec == null &&
+      binance.avgPayTimeSec == null &&
+      binance.registerTime == null &&
+      !binance.emailVerified &&
+      !binance.mobileVerified &&
+      !binance.kycVerified)
+  ) {
+    return null;
+  }
+  return (
+    <Card className="gap-0 px-4 py-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs sm:flex sm:flex-wrap sm:items-center sm:gap-x-6">
+        {binance.registerTime != null && (
+          <Fact label="Joined">{formatSLT(new Date(binance.registerTime), { dateStyle: "medium" })}</Fact>
+        )}
+        {binance.avgReleaseTimeSec != null && (
+          <Fact label="Avg release">{formatDurationShort(binance.avgReleaseTimeSec)}</Fact>
+        )}
+        {binance.avgPayTimeSec != null && <Fact label="Avg pay">{formatDurationShort(binance.avgPayTimeSec)}</Fact>}
+        {(binance.emailVerified || binance.mobileVerified || binance.kycVerified) && (
+          <div className="col-span-2 flex flex-wrap items-center gap-1.5 sm:col-span-1">
+            <dt className="sr-only">Verified</dt>
+            {binance.emailVerified && <VerificationPill label="Email" />}
+            {binance.mobileVerified && <VerificationPill label="SMS" />}
+            {binance.kycVerified && <VerificationPill label="ID" />}
+          </div>
+        )}
+      </dl>
     </Card>
   );
 }
 
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-1.5">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-mono tabular-nums text-foreground">{children}</dd>
+    </div>
+  );
+}
 
 function ReportsList({ reports }: { reports: SuspiciousReport[] }) {
-  if (reports.length === 0) {
-    return (
-      <Empty
-        icon={ShieldAlert}
-        title="No reports"
-        description="There are no reports filed against this taker."
-      />
-    );
-  }
-
-  // Unique reasons → at-a-glance summary row
   const reasonCounts = new Map<string, number>();
-  for (const r of reports) {
-    reasonCounts.set(r.reason, (reasonCounts.get(r.reason) ?? 0) + 1);
-  }
-  const sortedReasons = Array.from(reasonCounts.entries()).sort(
-    (a, b) => b[1] - a[1],
-  );
+  for (const r of reports) reasonCounts.set(r.reason, (reasonCounts.get(r.reason) ?? 0) + 1);
+  const sortedReasons = Array.from(reasonCounts.entries()).sort((a, b) => b[1] - a[1]);
 
   return (
-    <Card className="border-border bg-card/60">
-      <CardContent className="space-y-3 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Reports filed
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-            {sortedReasons.map(([reason, count]) => (
-              <Badge
-                key={reason}
-                variant="outline"
-                className="border-[color:var(--color-sell)]/30 text-[9px] font-semibold uppercase tracking-wider text-[color:var(--color-sell)]"
-              >
-                {count}× {reason}
-              </Badge>
-            ))}
-          </div>
-        </div>
-
-        <ul className="divide-y divide-border/40">
-          {reports.map((r) => (
-            <li key={r.id} className="py-3 text-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className="border-[color:var(--color-sell)]/40 text-[color:var(--color-sell)]"
-                >
-                  {r.reason}
-                </Badge>
-                <span className="text-muted-foreground">
-                  {formatSLT(r.ts)} SLT
-                </span>
-                {r.reporter && (
-                  <span className="text-muted-foreground">
-                    · by {r.reporter}
-                  </span>
-                )}
-              </div>
-              {r.notes && (
-                <p className="mt-1 text-muted-foreground">{r.notes}</p>
-              )}
-            </li>
+    <Card className="gap-4 px-4 py-4">
+      {sortedReasons.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {sortedReasons.map(([reason, count]) => (
+            <ReasonBadge key={reason} reason={`${count}× ${reason}`} />
           ))}
-        </ul>
-      </CardContent>
+        </div>
+      )}
+      <ul className="divide-y divide-border">
+        {reports.map((r) => (
+          <ReportItem key={r.id} report={r} />
+        ))}
+      </ul>
     </Card>
   );
 }
 
 function VerificationPill({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-[color:var(--color-buy)]/30 bg-[color:var(--color-buy-muted)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[color:var(--color-buy)]">
-      <Check className="h-2.5 w-2.5" strokeWidth={3} />
+    <span className="inline-flex items-center gap-1 rounded-md border border-[color:var(--color-buy)]/30 bg-[color:var(--color-buy)]/10 px-1.5 py-0.5 font-mono text-xs font-medium text-[color:var(--color-buy)]">
+      <Check className="size-3" strokeWidth={3} />
       {label}
     </span>
   );
 }
 
-/** Short humanized seconds → "1m 38s" or "5m 26s". Mirrors how Binance's
- *  profile page renders avg times but stays on one line. */
+/** Seconds → "1m 38s". */
 function formatDurationShort(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "—";
   if (sec < 60) return `${Math.round(sec)}s`;
@@ -527,8 +340,7 @@ function formatDurationShort(sec: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-/** Humanize account age in days: "14d", "45d", "8mo", "1y 3mo". Keeps the
- *  unit tight so it fits the stat card value slot without wrapping. */
+/** Account age in days → "14d", "8mo", "1y 3mo". */
 function formatAgeDays(days: number): string {
   if (!Number.isFinite(days) || days < 0) return "—";
   if (days < 60) return `${days}d`;
@@ -537,4 +349,9 @@ function formatAgeDays(days: number): string {
   const years = Math.floor(months / 12);
   const remMonths = months % 12;
   return remMonths > 0 ? `${years}y ${remMonths}mo` : `${years}y`;
+}
+
+/** Milliseconds since `ms` (server render — evaluated once per request). */
+function msSince(ms: number): number {
+  return Date.now() - ms;
 }

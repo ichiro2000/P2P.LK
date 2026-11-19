@@ -1,0 +1,13 @@
+{
+ "code": "000000",
+ "success": true,
+ "data": {
+  "positiveRate": 0.99653001,
+  "negativeRate": 0.00346998,
+  "generalRate": 0,
+  "positiveCount": 24698,
+  "negativeCount": 86,
+  "generalCount": 0,
+  "totalCount": 24784
+ }
+}

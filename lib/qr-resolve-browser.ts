@@ -1,190 +1,87 @@
+import puppeteer from "@cloudflare/puppeteer";
+import { getEnv } from "@/lib/db/client";
+
 /**
- * Headless-browser fallback for resolving Binance QR short-links.
+ * Headless-browser fallback for Binance QR short-links that sit behind an AWS
+ * WAF JS challenge. Runs on Cloudflare Browser Rendering — nothing launches
+ * inside our own Worker, so a burst of lookups can't exhaust our memory.
  *
- * Binance protects `www.binance.com/qr/*` (and other share-link hostnames)
- * with an AWS WAF JS challenge — plain `fetch()` from Node gets a 202 + an
- * HTML page saying "JavaScript required". We launch a real Chromium,
- * navigate to the short-link, let the challenge solve, and read the final
- * URL (which lands on `c2c.binance.com/…advertiserNo=…`).
- *
- * The cost isn't trivial: ~2–4 s per resolve and ~250 MB peak memory. We
- * only hit this path when the sync parser + `adv/search` chain have both
- * failed, and we cache successful resolutions in-process so the same QR
- * doesn't rebooting Chromium on every upload.
- *
- * Requirements at runtime:
- *   - `chromium` binary on PATH (we set PLAYWRIGHT_CHROMIUM_EXECUTABLE in
- *     the Dockerfile to `/usr/bin/chromium`).
- *   - `playwright-core` installed.
- *
- * Set `PLAYWRIGHT_CHROMIUM_DISABLE=1` to hard-disable the resolver (used
- * in local dev when Chromium isn't installed).
+ * Safety:
+ *   - Only Binance hosts may be loaded; every request the page makes to any
+ *     other host is aborted (no SSRF via redirects).
+ *   - Results cached in KV for 7 days, keyed by the short-link.
+ *   - A KV lock keeps at most one session running at a time.
  */
 
-import { chromium, type Browser } from "playwright";
+const ALLOWED = ["binance.com", "binance.me", "bnc.lt"];
+const isAllowedHost = (h: string) =>
+  ALLOWED.some((s) => h === s || h.endsWith(`.${s}`));
 
-const BROWSER_UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
-
-let browserPromise: Promise<Browser> | null = null;
-
-function isEnabled(): boolean {
-  return process.env.PLAYWRIGHT_CHROMIUM_DISABLE !== "1";
-}
-
-async function getBrowser(): Promise<Browser> {
-  if (!browserPromise) {
-    // `executablePath: undefined` → Playwright uses its own bundled
-    // Chromium (the base image at mcr.microsoft.com/playwright ships it
-    // at /ms-playwright/...). Can still be overridden in dev via env.
-    const execPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
-    console.log(
-      `[qr-resolve-browser] launching chromium (exec=${execPath ?? "<bundled>"}, PLAYWRIGHT_BROWSERS_PATH=${process.env.PLAYWRIGHT_BROWSERS_PATH ?? "<unset>"}, HOME=${process.env.HOME ?? "<unset>"}, cwd=${process.cwd()})`,
-    );
-    browserPromise = chromium
-      .launch({
-        executablePath: execPath,
-        headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--disable-setuid-sandbox",
-          // Keep Chromium from phoning home and opening unnecessary
-          // background services. Reduces memory and startup time.
-          "--no-default-browser-check",
-          "--no-first-run",
-          "--disable-extensions",
-          "--disable-background-networking",
-          "--disable-sync",
-          "--metrics-recording-only",
-          "--mute-audio",
-        ],
-      })
-      .then((b) => {
-        console.log("[qr-resolve-browser] chromium launched");
-        return b;
-      })
-      .catch((err) => {
-        console.error(
-          `[qr-resolve-browser] chromium launch failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        // Don't cache the rejection — the next call should retry. This
-        // matters on cold deploys where Chromium may briefly be missing
-        // before the image is fully ready.
-        browserPromise = null;
-        throw err;
-      });
-  }
-  return browserPromise;
-}
-
-// In-process LRU-ish cache — first N successful resolutions, ~10 min TTL.
-// QR short-links don't rotate, so repeat uploads of the same image don't
-// need to re-launch Chromium.
-const CACHE_MAX = 200;
-const CACHE_TTL_MS = 10 * 60 * 1000;
-const cache = new Map<string, { url: string; at: number }>();
-
-function cacheGet(key: string): string | null {
-  const hit = cache.get(key);
-  if (!hit) return null;
-  if (Date.now() - hit.at > CACHE_TTL_MS) {
-    cache.delete(key);
-    return null;
-  }
-  return hit.url;
-}
-
-function cacheSet(key: string, url: string) {
-  if (cache.size >= CACHE_MAX) {
-    // Evict the oldest entry — Map iteration order is insertion order.
-    const oldest = cache.keys().next().value;
-    if (oldest) cache.delete(oldest);
-  }
-  cache.set(key, { url, at: Date.now() });
-}
+const CACHE_TTL = 7 * 86400;
+const LOCK_KEY = "qr:browser-lock";
+const LOCK_TTL = 60;
 
 export async function resolveShortLinkViaBrowser(
   url: string,
   opts?: { timeoutMs?: number },
 ): Promise<string | null> {
-  if (!isEnabled()) {
-    console.log("[qr-resolve-browser] disabled via env, skipping");
-    return null;
-  }
-  const timeout = opts?.timeoutMs ?? 15000;
-  const cached = cacheGet(url);
-  if (cached) {
-    console.log(`[qr-resolve-browser] cache hit for ${url}`);
-    return cached;
-  }
-  console.log(`[qr-resolve-browser] resolving ${url}`);
-
-  let browser: Browser;
+  let start: URL;
   try {
-    browser = await getBrowser();
+    start = new URL(url);
   } catch {
     return null;
   }
+  if (start.protocol !== "https:" || !isAllowedHost(start.hostname)) return null;
 
-  const context = await browser.newContext({
-    userAgent: BROWSER_UA,
-    viewport: { width: 1280, height: 720 },
-    // WAF checks for these headers; matching a real browser reduces
-    // the chance of an extra challenge loop.
-    locale: "en-US",
-    timezoneId: "UTC",
-    extraHTTPHeaders: {
-      "Accept-Language": "en-US,en;q=0.9",
-    },
-  });
-  // Block images/media/fonts — we only care about the final URL, and
-  // skipping asset loads cuts resolve time roughly in half.
-  await context.route("**/*", (route) => {
-    const t = route.request().resourceType();
-    if (t === "image" || t === "media" || t === "font") {
-      return route.abort();
-    }
-    return route.continue();
-  });
+  const env = await getEnv();
+  const cacheKey = `qr:resolved:${start.toString()}`;
+  const cached = await env.LIVE.get(cacheKey);
+  if (cached) return cached;
 
-  const page = await context.newPage();
+  // Single-flight: if another resolve is in progress, don't start a second
+  // browser — the caller falls back to the sync parse.
+  if (await env.LIVE.get(LOCK_KEY)) return null;
+  await env.LIVE.put(LOCK_KEY, "1", { expirationTtl: LOCK_TTL });
+
+  const timeout = Math.min(opts?.timeoutMs ?? 15000, 20000);
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
   try {
-    // `waitUntil: "load"` fires on each navigation. The WAF challenge
-    // page issues a full-page reload after solving, which counts as a
-    // new navigation — using "domcontentloaded" + a post-challenge
-    // networkidle gets us the final page reliably.
-    await page.goto(url, { timeout, waitUntil: "domcontentloaded" });
-    // Give the WAF JS a beat to run + trigger its reload.
+    browser = await puppeteer.launch(env.BROWSER);
+    const page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on("request", (req) => {
+      try {
+        const h = new URL(req.url()).hostname;
+        // Binance pages pull assets from their CDN (bnbstatic) — allow those
+        // read-only; block everything else.
+        const sub = (d: string) => h === d || h.endsWith(`.${d}`);
+        if (isAllowedHost(h) || sub("bnbstatic.com") || sub("awswaf.com")) {
+          void req.continue();
+        } else {
+          void req.abort();
+        }
+      } catch {
+        void req.abort();
+      }
+    });
+    await page.goto(start.toString(), { timeout, waitUntil: "domcontentloaded" });
     await page
-      .waitForURL(
-        (u) =>
-          /advertiserDetail\?advertiserNo=/.test(u.toString()) ||
-          /advertiserNo=/.test(u.toString()),
-        { timeout: Math.min(timeout, 12000) },
-      )
-      .catch(() => {
-        // Fall through — maybe the redirect landed on a page without
-        // the param in the URL; we'll still return page.url() and let
-        // the caller decide.
-      });
+      .waitForFunction(() => /advertiserNo=/.test(location.href), {
+        timeout: Math.min(timeout, 12000),
+      })
+      .catch(() => undefined);
     const finalUrl = page.url();
-    console.log(
-      `[qr-resolve-browser] landed on ${finalUrl} (from ${url})`,
-    );
-    if (!finalUrl || finalUrl === url) return null;
-    cacheSet(url, finalUrl);
+    const final = new URL(finalUrl);
+    if (!isAllowedHost(final.hostname)) return null;
+    if (/advertiserNo=/.test(finalUrl)) {
+      await env.LIVE.put(cacheKey, finalUrl, { expirationTtl: CACHE_TTL });
+    }
     return finalUrl;
   } catch (err) {
-    console.error(
-      `[qr-resolve-browser] resolve failed for ${url}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    console.error(`[qr-resolve-browser] ${(err as Error).message}`);
     return null;
   } finally {
-    // Always close the page + context. Leaking contexts is the fastest
-    // path to OOM on the 1 GB instance.
-    await page.close().catch(() => {});
-    await context.close().catch(() => {});
+    await browser?.close().catch(() => undefined);
+    await env.LIVE.delete(LOCK_KEY).catch(() => undefined);
   }
 }

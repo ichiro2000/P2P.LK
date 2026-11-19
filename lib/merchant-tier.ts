@@ -13,6 +13,11 @@
  * merchant-vs-user flag — every merchant in the feed has grade=3,
  * every user has grade=2. Don't use it for tier color.
  *
+ * Bybit: every ad says userType "PERSONAL", so the adapter derives
+ * `isMerchant` and `vipLevel` from the auth tags instead
+ * (`bybitVerifiedLevel` in lib/exchanges/bybit.ts): VA/VA1 → 1 (bronze),
+ * VA2 → 2 (silver), VA3 or BA → 3 (gold), GA only → not verified.
+ *
  * `userIdentity` is kept as metadata (BLOCK_MERCHANT is a premium
  * escalation Binance uses in other markets — currently absent from
  * LKR). If we ever see BLOCK_MERCHANT it's treated as gold.

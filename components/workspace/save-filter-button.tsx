@@ -4,7 +4,7 @@ import { useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Bookmark, Check } from "lucide-react";
 import { toast } from "sonner";
-import { savedFilters } from "@/lib/storage";
+import { useSavedFilters } from "@/hooks/use-member-data";
 import { cn } from "@/lib/utils";
 
 /**
@@ -24,10 +24,12 @@ export function SaveFilterButton({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [justSaved, setJustSaved] = useState(false);
+  const savedFilters = useSavedFilters();
 
   function handle(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
+    if (savedFilters.mode === "loading") return;
     const search = searchParams?.toString() ?? "";
     const entry = savedFilters.add(autoLabel, pathname ?? "/", search);
     setJustSaved(true);
@@ -47,11 +49,10 @@ export function SaveFilterButton({
       onClick={handle}
       className={cn(
         "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card/50 px-2.5 text-[11px] font-medium text-muted-foreground transition-colors",
-        "hover:border-primary/40 hover:text-foreground",
+        "hover:bg-muted hover:text-foreground",
         justSaved && "border-[color:var(--color-buy)]/40 text-[color:var(--color-buy)]",
         className,
       )}
-      aria-label="Save current filter"
     >
       {justSaved ? (
         <Check className="h-3.5 w-3.5" strokeWidth={2} />

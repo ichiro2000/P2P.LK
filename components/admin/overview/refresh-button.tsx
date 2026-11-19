@@ -1,0 +1,26 @@
+"use client";
+
+import { useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+/** Re-runs the page's server queries. The only "polling" admin pages do. */
+export function RefreshButton({ className }: { className?: string }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={cn("h-9 sm:h-8", className)}
+      disabled={pending}
+      onClick={() => start(() => router.refresh())}
+    >
+      <RefreshCw className={cn(pending && "animate-spin")} aria-hidden />
+      {pending ? "Refreshing…" : "Refresh"}
+    </Button>
+  );
+}

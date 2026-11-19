@@ -1,41 +1,48 @@
 "use client";
 
+import { ALL_PAY_METHODS, PAY_GROUP_LABEL, type PayGroup, type PayTypeOption } from "@/lib/exchanges/types";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import {
-  ASSET,
-  FIAT,
-  BANK_TRANSFER_OPTIONS,
-  MERCHANT_TYPES,
-} from "@/lib/constants";
+import { ASSET, FIAT, MERCHANT_TYPES } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { SaveFilterButton } from "@/components/workspace/save-filter-button";
 
 export type FilterState = {
   asset: string;
   fiat: string;
-  /** Empty string means "both bank identifiers"; otherwise a single id. */
+  /** "" = all bank rails (default), "all" = every method, else one method id. */
   payType: string;
   merchantType: string;
 };
 
+const TRIGGER = "w-full min-w-0 data-[size=default]:h-10 lg:w-48 lg:data-[size=default]:h-8";
+
 /**
- * URL-backed filter bar. Product scope is fixed to USDT / LKR so only two
- * pickers remain: which specific bank identifier to scope to, and whether
- * to restrict to verified merchants.
+ * URL-backed filter bar. Scope is fixed to USDT / LKR, so only two pickers
+ * remain: payment method and publisher type. Used by several pages — keep the
+ * props stable.
  */
 export function FilterBar({
   initial,
+  payTypes,
+  showPayType = true,
   className,
 }: {
   initial: FilterState;
+  /** Payment methods offered by the active exchange (grouped by `group`). */
+  payTypes: PayTypeOption[];
+  /** Hide the payment picker where the data covers all rails at once. */
+  showPayType?: boolean;
   className?: string;
 }) {
   const router = useRouter();
@@ -49,66 +56,56 @@ export function FilterBar({
       if (v && v !== "") next.set(k, v);
       else next.delete(k);
     }
-    router.push(`${pathname}?${next.toString()}`);
+    router.push(`${pathname}?${next.toString()}`, { scroll: false });
   }
 
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-lg border border-border bg-card/60 p-3 sm:p-4 md:flex-row md:items-end",
+        "flex flex-col gap-3 rounded-xl border border-border bg-card p-3 lg:flex-row lg:items-end lg:justify-between",
         className,
       )}
     >
-      <div className="grid grid-cols-2 gap-3 md:flex md:flex-1 md:items-end md:gap-3">
-        {/* Asset is locked to USDT — render as a static chip so users get
-            immediate context without a 1-option dropdown. */}
-        <LockedChip label="Asset" value={ASSET} />
+      <div className="grid grid-cols-2 gap-3 lg:flex lg:items-end">
+        <div className="hidden min-w-0 flex-col gap-1.5 lg:flex">
+          <Label className="text-xs text-muted-foreground">Market</Label>
+          <div className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 font-mono text-sm">
+            {ASSET}
+            <span className="text-muted-foreground">/</span>
+            {FIAT.flag} {FIAT.code}
+          </div>
+        </div>
 
-        {/* Fiat is locked to LKR — same treatment. */}
-        <LockedChip
-          label="Country"
-          value={
-            <span className="inline-flex items-center gap-1.5 font-mono">
-              <span>{FIAT.flag}</span>
-              <span>{FIAT.code}</span>
-            </span>
-          }
-        />
+        {showPayType && (
+          <Field label="Payment method">
+            <Select value={initial.payType || ""} onValueChange={(v) => update({ payType: v ?? "" })}>
+              <SelectTrigger className={TRIGGER} aria-label="Payment method">
+                <SelectValue placeholder={DEFAULT_LABEL}>{(val) => selectionLabel(String(val ?? ""), payTypes)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">{DEFAULT_LABEL}</SelectItem>
+                <SelectItem value={ALL_PAY_METHODS}>{ALL_LABEL}</SelectItem>
+                {groupMethods(payTypes).map(([group, items]) => (
+                  <SelectGroup key={group}>
+                    <SelectSeparator />
+                    <SelectLabel>{PAY_GROUP_LABEL[group]}</SelectLabel>
+                    {items.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
 
-        <FilterField label="Bank rail">
-          <Select
-            value={initial.payType || ""}
-            onValueChange={(v) => update({ payType: v ?? "" })}
-          >
-            <SelectTrigger className="w-full min-w-[200px]">
-              <SelectValue placeholder="All bank transfers">
-                {(val) => {
-                  const opt = BANK_TRANSFER_OPTIONS.find((o) => o.id === val);
-                  return opt?.label ?? "All bank transfers";
-                }}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">All bank transfers</SelectItem>
-              {BANK_TRANSFER_OPTIONS.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterField>
-
-        <FilterField label="Publisher">
-          <Select
-            value={initial.merchantType}
-            onValueChange={(v) => update({ merchantType: v ?? "all" })}
-          >
-            <SelectTrigger className="w-full min-w-[150px]">
+        <Field label="Publisher">
+          <Select value={initial.merchantType} onValueChange={(v) => update({ merchantType: v ?? "all" })}>
+            <SelectTrigger className={TRIGGER} aria-label="Publisher">
               <SelectValue placeholder="Publisher">
-                {(val) =>
-                  MERCHANT_TYPES.find((m) => m.id === val)?.label ?? "Publisher"
-                }
+                {(val) => MERCHANT_TYPES.find((m) => m.id === val)?.label ?? "Publisher"}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
@@ -119,60 +116,52 @@ export function FilterBar({
               ))}
             </SelectContent>
           </Select>
-        </FilterField>
+        </Field>
       </div>
 
-      <div className="flex shrink-0 items-end justify-end">
-        <SaveFilterButton autoLabel={saveLabel(initial)} />
+      {showPayType && initial.payType && (
+        <p className="text-xs text-muted-foreground lg:hidden">{METHOD_NOTE}</p>
+      )}
+
+      <div className="flex items-center justify-end gap-3">
+        {showPayType && initial.payType && (
+          <p className="hidden max-w-xs text-right text-xs text-muted-foreground lg:block">{METHOD_NOTE}</p>
+        )}
+        <SaveFilterButton autoLabel={saveLabel(initial, payTypes)} />
       </div>
     </div>
   );
 }
 
-function saveLabel(f: FilterState): string {
+const DEFAULT_LABEL = "All bank transfers";
+const ALL_LABEL = "All methods";
+const METHOD_NOTE =
+  "Each method is its own market: wallet, cash and top-up ads can price far from bank transfers. Live only, no stored history.";
+const GROUP_ORDER: PayGroup[] = ["bank", "wallet", "cash", "other"];
+
+function selectionLabel(val: string, payTypes: PayTypeOption[]): string {
+  if (val === ALL_PAY_METHODS) return ALL_LABEL;
+  return payTypes.find((o) => o.id === val)?.label ?? DEFAULT_LABEL;
+}
+
+function groupMethods(payTypes: PayTypeOption[]): [PayGroup, PayTypeOption[]][] {
+  return GROUP_ORDER.map((g) => [g, payTypes.filter((p) => (p.group ?? "other") === g)] as [PayGroup, PayTypeOption[]]).filter(
+    ([, items]) => items.length > 0,
+  );
+}
+
+function saveLabel(f: FilterState, payTypes: PayTypeOption[]): string {
   const parts = ["USDT/LKR"];
-  const rail = BANK_TRANSFER_OPTIONS.find((o) => o.id === f.payType)?.label;
-  if (rail) parts.push(rail);
+  if (f.payType) parts.push(selectionLabel(f.payType, payTypes));
   if (f.merchantType === "merchant") parts.push("merchants");
   return parts.join(" · ");
 }
 
-function FilterField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <Label className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        {label}
-      </Label>
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
       {children}
-    </div>
-  );
-}
-
-/**
- * A read-only chip for scope-locked fields (Asset, Fiat). Mirrors the height
- * and density of the Select triggers so the row stays visually aligned.
- */
-function LockedChip({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        {label}
-      </Label>
-      <div className="flex h-8 items-center gap-2 rounded-lg border border-border/60 bg-background/40 px-2.5 text-sm text-foreground">
-        {value}
-      </div>
     </div>
   );
 }

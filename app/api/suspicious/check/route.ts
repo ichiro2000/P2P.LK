@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { rateLimit, readQuery, zRequiredText } from "@/lib/guard";
+
+const Query = z.object({ decoded: zRequiredText(2048, "Missing `decoded` query param.") });
 import { reportsForUser } from "@/lib/db/suspicious";
 import { resolveBinanceProfile } from "@/lib/qr-resolve";
-
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 
 /**
  * GET /api/suspicious/check?decoded=<raw QR string or profile URL>
@@ -14,17 +15,14 @@ export const runtime = "nodejs";
  * show a "we couldn't read this QR" message instead of "not flagged".
  */
 export async function GET(req: NextRequest) {
-  const decoded = req.nextUrl.searchParams.get("decoded");
-  if (!decoded || !decoded.trim()) {
-    return NextResponse.json(
-      { error: "Missing `decoded` query param." },
-      { status: 400 },
-    );
-  }
+  // Resolving a QR can follow redirects or start a headless browser, so it
+  // shares the strict write bucket.
+  const limited = await rateLimit(req, "write", "qr");
+  if (limited) return limited;
+  const q = readQuery(req, Query);
+  if (!q.ok) return q.res;
+  const { decoded } = q.data;
 
-  // Resolve so short-link QR codes match reports stored under the real
-  // advertiserNo; otherwise the registry would read "not flagged" for any QR
-  // uploaded via a redirect URL.
   const ref = await resolveBinanceProfile(decoded);
   if (!ref) {
     return NextResponse.json(
@@ -36,7 +34,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const reports = await reportsForUser(ref.userId);
+  const reports = await reportsForUser("binance", ref.userId);
   return NextResponse.json({
     flagged: reports.length > 0,
     profile: ref,

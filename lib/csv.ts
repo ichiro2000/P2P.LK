@@ -1,9 +1,12 @@
 import type { ReportColumn, ReportTable } from "./reports";
 
-/** RFC 4180-ish CSV encoding — handles commas, quotes, newlines. */
+/** RFC 4180-ish CSV encoding — handles commas, quotes, newlines.
+ *  Text cells starting with = + - @ tab or CR get a leading apostrophe so a
+ *  spreadsheet shows them as text instead of running them as a formula
+ *  (merchant names come straight from the exchanges). Numbers are untouched. */
 export function escapeCell(v: string | number | null | undefined): string {
   if (v == null) return "";
-  const s = typeof v === "number" ? String(v) : v;
+  const s = typeof v === "number" ? String(v) : /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
   if (/[",\n\r]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }

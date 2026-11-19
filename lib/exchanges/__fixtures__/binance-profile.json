@@ -1,0 +1,49 @@
+{
+ "code": "000000",
+ "success": true,
+ "data": {
+  "userDetailVo": {
+   "userNo": "sb95d65b7314e3603bb0b15ed039f1749",
+   "nickName": "CHAMICRO TRADING ",
+   "userGrade": 3,
+   "margin": 1000.0,
+   "marginUnit": "USDT",
+   "orderCount": 110681,
+   "monthOrderCount": 2129,
+   "monthFinishRate": 1.0,
+   "advConfirmTime": 197,
+   "emailVerified": true,
+   "bindMobile": true,
+   "kycVerified": true,
+   "kycStatus": "PASS",
+   "userStatsRet": {
+    "registerDays": 1809,
+    "firstOrderDays": 1808,
+    "avgReleaseTimeOfLatest30day": 186.84,
+    "avgPayTimeOfLatest30day": 233.27,
+    "finishRateLatest30day": 1.0,
+    "completedOrderNumOfLatest30day": 2129,
+    "completedBuyOrderNumOfLatest30day": 991,
+    "completedSellOrderNumOfLatest30day": 1138,
+    "completedOrderTotalBtcAmountOfLatest30day": 0,
+    "completedOrderNum": 110681,
+    "completedBuyOrderNum": 50910,
+    "completedSellOrderNum": 59770,
+    "completedBuyOrderTotalBtcAmount": 0,
+    "completedSellOrderTotalBtcAmount": 0,
+    "completedOrderTotalBtcAmount": 0,
+    "counterpartyCount": 55405
+   },
+   "chanelInvolved": "c2c_only",
+   "userIdentity": "MASS_MERCHANT",
+   "vipLevel": 1,
+   "lastActiveTime": 1795116605791,
+   "activeTimeInSecond": 37,
+   "badges": [
+    "Ordinary"
+   ]
+  },
+  "sellList": [],
+  "buyList": []
+ }
+}

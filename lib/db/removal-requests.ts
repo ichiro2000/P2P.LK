@@ -1,33 +1,30 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "./client";
 import type { SuspiciousRemovalRequestRow } from "./schema";
+import type { ExchangeId } from "@/lib/exchanges";
 
 export type RemovalRequest = SuspiciousRemovalRequestRow;
 export type RemovalStatus = "pending" | "approved" | "rejected";
 
-/**
- * A public request to un-flag a taker. No admin token required — the gate is
- * the admin review step downstream. `reporterContact` is optional (email /
- * handle) so the admin can get back to the requester for clarifications.
- */
+export class RemovalRequestError extends Error {
+  constructor(
+    message: string,
+    public status: 404 | 409,
+  ) {
+    super(message);
+  }
+}
+
 export async function createRemovalRequest(input: {
-  binanceUserId: string;
+  exchange: ExchangeId;
+  userId: string;
   reason: string;
   reporterContact: string | null;
 }): Promise<RemovalRequest> {
   const db = await getDb();
-  const row = {
-    ts: Math.floor(Date.now() / 1000),
-    binanceUserId: input.binanceUserId,
-    reason: input.reason,
-    reporterContact: input.reporterContact,
-    status: "pending" as const,
-    reviewedTs: null,
-    reviewNote: null,
-  };
   const [inserted] = await db
     .insert(schema.suspiciousRemovalRequests)
-    .values(row)
+    .values({ ...input, ts: Math.floor(Date.now() / 1000), status: "pending" })
     .returning();
   return inserted;
 }
@@ -36,93 +33,80 @@ export async function listRemovalRequests(opts?: {
   status?: RemovalStatus | "all";
 }): Promise<RemovalRequest[]> {
   const db = await getDb();
+  const r = schema.suspiciousRemovalRequests;
   const status = opts?.status ?? "pending";
-  const q = db
+  return db
     .select()
-    .from(schema.suspiciousRemovalRequests)
-    .orderBy(desc(schema.suspiciousRemovalRequests.ts));
-  if (status === "all") return q;
-  return q.where(eq(schema.suspiciousRemovalRequests.status, status));
+    .from(r)
+    .where(status === "all" ? undefined : eq(r.status, status))
+    .orderBy(desc(r.ts));
 }
 
-export async function getRemovalRequest(
-  id: number,
-): Promise<RemovalRequest | null> {
+export async function hasPendingRemovalRequest(ex: ExchangeId, userId: string): Promise<boolean> {
   const db = await getDb();
-  const rows = await db
-    .select()
-    .from(schema.suspiciousRemovalRequests)
-    .where(eq(schema.suspiciousRemovalRequests.id, id))
-    .limit(1);
-  return rows[0] ?? null;
-}
-
-/** Is there already a pending request for this taker? Used to stop duplicate
- *  submissions from the public form. */
-export async function hasPendingRemovalRequest(
-  binanceUserId: string,
-): Promise<boolean> {
-  const db = await getDb();
+  const r = schema.suspiciousRemovalRequests;
   const [row] = await db
     .select({ c: sql<number>`count(*)` })
-    .from(schema.suspiciousRemovalRequests)
-    .where(
-      and(
-        eq(schema.suspiciousRemovalRequests.binanceUserId, binanceUserId),
-        eq(schema.suspiciousRemovalRequests.status, "pending"),
-      ),
-    );
+    .from(r)
+    .where(and(eq(r.exchange, ex), eq(r.userId, userId), eq(r.status, "pending")));
   return Number(row?.c ?? 0) > 0;
 }
 
 /**
- * Admin decision. On `approved` we also flip every active report for that
- * taker to `status = 'retracted'`, which hides them from `listSuspicious` and
- * `reportsForUser` in one shot. We keep the retracted rows — an audit trail —
- * and record how many we touched so the admin UI can confirm the effect.
+ * Admin decision. The status flip is conditional (`WHERE status='pending'`)
+ * and runs in the same D1 batch (transaction) as the retraction, so two
+ * admins clicking at once can't both apply a decision.
  */
 export async function decideRemovalRequest(input: {
   id: number;
   decision: "approved" | "rejected";
   reviewNote: string | null;
+  /** Admin user id — recorded on the reports this approval retracts. */
+  reviewedBy: string;
 }): Promise<{ request: RemovalRequest; retractedCount: number }> {
   const db = await getDb();
+  const r = schema.suspiciousRemovalRequests;
+  const t = schema.suspiciousTakers;
   const now = Math.floor(Date.now() / 1000);
 
-  const existing = await getRemovalRequest(input.id);
-  if (!existing) {
-    throw new Error(`Removal request ${input.id} not found.`);
-  }
+  const [existing] = await db.select().from(r).where(eq(r.id, input.id)).limit(1);
+  if (!existing) throw new RemovalRequestError(`Removal request ${input.id} not found.`, 404);
   if (existing.status !== "pending") {
-    throw new Error(
-      `Removal request ${input.id} is already ${existing.status}.`,
-    );
+    throw new RemovalRequestError(`Removal request ${input.id} is already ${existing.status}.`, 409);
   }
 
-  const [updated] = await db
-    .update(schema.suspiciousRemovalRequests)
-    .set({
-      status: input.decision,
-      reviewedTs: now,
-      reviewNote: input.reviewNote,
-    })
-    .where(eq(schema.suspiciousRemovalRequests.id, input.id))
+  const update = db
+    .update(r)
+    .set({ status: input.decision, reviewedTs: now, reviewNote: input.reviewNote })
+    .where(and(eq(r.id, input.id), eq(r.status, "pending")))
     .returning();
 
-  let retractedCount = 0;
-  if (input.decision === "approved") {
-    const retracted = await db
-      .update(schema.suspiciousTakers)
-      .set({ status: "retracted" })
-      .where(
-        and(
-          eq(schema.suspiciousTakers.binanceUserId, existing.binanceUserId),
-          eq(schema.suspiciousTakers.status, "active"),
-        ),
-      )
-      .returning({ id: schema.suspiciousTakers.id });
-    retractedCount = retracted.length;
+  if (input.decision === "rejected") {
+    const [updated] = await update;
+    if (!updated) throw new RemovalRequestError(`Removal request ${input.id} was already decided.`, 409);
+    return { request: updated, retractedCount: 0 };
   }
 
-  return { request: updated, retractedCount };
+  // Retraction only applies if the status flip in the same transaction did.
+  const retract = db
+    .update(t)
+    .set({
+      status: "retracted",
+      reviewedBy: input.reviewedBy,
+      reviewedTs: now,
+      reviewNote: `Removal request #${input.id} approved${input.reviewNote ? `: ${input.reviewNote}` : ""}`.slice(0, 1000),
+    })
+    .where(
+      and(
+        eq(t.exchange, existing.exchange),
+        eq(t.userId, existing.userId),
+        eq(t.status, "active"),
+        sql`EXISTS (SELECT 1 FROM suspicious_removal_requests WHERE id = ${input.id} AND status = 'approved' AND reviewed_ts = ${now})`,
+      ),
+    )
+    .returning({ id: t.id });
+  const [updatedRows, retracted] = await db.batch([update, retract]);
+  const updated = updatedRows[0];
+  if (!updated) throw new RemovalRequestError(`Removal request ${input.id} was already decided.`, 409);
+  return { request: updated, retractedCount: retracted.length };
 }

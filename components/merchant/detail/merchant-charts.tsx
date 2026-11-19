@@ -3,561 +3,315 @@
 import {
   Area,
   AreaChart,
-  ComposedChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
   Line,
-  ResponsiveContainer,
-  Tooltip,
+  LineChart,
+  PolarAngleAxis,
+  RadialBar,
+  RadialBarChart,
   XAxis,
   YAxis,
-  ReferenceLine,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCompact, formatFiat, formatPct } from "@/lib/format";
+import {
+  ANIM,
+  C,
+  ChartCard,
+  ChartEmpty,
+  ChartFrame,
+  FadeGradient,
+  GRID,
+  MARGIN,
+  TimeTooltip,
+  ValueTooltip,
+  axisX,
+  axisY,
+  spanOf,
+  timeTick,
+  type ChartConfig,
+} from "@/components/charts/kit";
+import { ChartContainer } from "@/components/ui/chart";
+import { formatCompact, formatFiat, formatPct, formatCount } from "@/lib/format";
+import { FIAT } from "@/lib/constants";
 
 /**
- * Shape passed into every chart on the merchant detail page. Every field is
- * nullable because merchants drop in and out of the book — a tick where the
- * merchant wasn't listing still produces a row in this series (with nulls) so
- * gaps are visible in the X axis.
+ * One row of the merchant detail series. `t` is epoch ms (the kit's time
+ * tooltip reads it). Merchant fields are null when they weren't listing at
+ * that tick so gaps stay visible; market fields are forward-filled.
  */
 export type MerchantPoint = {
-  /** unix seconds */
-  ts: number;
-  bestBuy: number | null;
-  bestSell: number | null;
-  /** market-wide median at the same tick, for the overlay line */
-  marketMid: number | null;
-  /** total fiat depth across the merchant's ads at this tick */
-  totalFiat: number | null;
+  t: number;
+  /** Their best buy-ad (bid) price. */
+  bidPx: number | null;
+  /** Their best sell-ad (ask) price. */
+  askPx: number | null;
+  mid: number | null;
+  /** How far their ask is above the market's best ask (0 = they are best). */
+  sellGap: number | null;
+  /** How far their bid is below the market's best bid (0 = they are best). */
+  buyGap: number | null;
+  depth: number | null;
   buyAds: number | null;
   sellAds: number | null;
+  orders: number | null;
 };
 
-function shortTime(ms: number, withDate = false) {
-  const d = new Date(ms);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  if (!withDate) return `${hh}:${mm}`;
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mo = d.toLocaleString("en", { month: "short" });
-  return `${dd} ${mo} ${hh}:${mm}`;
-}
+const sym = FIAT.symbol;
+const hasAny = (rows: MerchantPoint[], k: keyof MerchantPoint) =>
+  rows.filter((r) => r[k] != null).length >= 2;
 
-const axisTick = {
-  fill: "var(--color-muted-foreground)",
-  fontSize: 10,
-  fontFamily: "var(--font-mono)",
-};
+/* ── Price vs market ───────────────────────────────────────────────────── */
 
-const tooltipStyles = {
-  contentStyle: {
-    background: "var(--color-popover)",
-    border: "1px solid var(--color-border)",
-    borderRadius: 8,
-    fontSize: 11,
-    padding: "8px 10px",
-    boxShadow:
-      "0 12px 40px -12px rgb(0 0 0 / 50%), 0 0 0 1px rgb(255 255 255 / 4%)",
-  },
-  labelStyle: {
-    color: "var(--color-muted-foreground)",
-    fontFamily: "var(--font-mono)" as const,
-    marginBottom: 4,
-  },
-  itemStyle: { fontFamily: "var(--font-mono)" as const },
-};
+const priceCfg = {
+  // Keys must not be "buy"/"sell": ChartContainer would redefine the
+  // global --color-buy/--color-sell tokens inside the chart.
+  askPx: { label: "Their sell ad", color: C.buy },
+  bidPx: { label: "Their buy ad", color: C.sell },
+  mid: { label: "Market mid", color: C.muted },
+} satisfies ChartConfig;
 
-function EmptyChart({ height, msg }: { height: number; msg: string }) {
+export function PriceVsMarketChart({ points }: { points: MerchantPoint[] }) {
+  const tick = timeTick(spanOf(points, (p) => p.t));
+  const ok = hasAny(points, "bidPx") || hasAny(points, "askPx");
   return (
-    <div
-      style={{ height }}
-      className="flex items-center justify-center rounded-md border border-dashed border-border/50 bg-card/40 text-center"
+    <ChartCard
+      title="Price vs market"
+      description="Their best ad on each side against the market mid"
+      legend={[
+        { label: "Their sell ad", color: C.buy },
+        { label: "Their buy ad", color: C.sell },
+        { label: "Market mid", color: C.muted, dashed: true },
+      ]}
     >
-      <div className="max-w-xs px-4 text-[11px] leading-relaxed text-muted-foreground">
-        {msg}
+      {!ok ? (
+        <ChartEmpty />
+      ) : (
+        <ChartFrame config={priceCfg} height="md" label="Merchant prices compared with the market mid over time">
+          <LineChart data={points} margin={MARGIN}>
+            <CartesianGrid {...GRID} />
+            <XAxis {...axisX} dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={tick} />
+            <YAxis {...axisY} domain={["auto", "auto"]} tickFormatter={(v: number) => v.toFixed(1)} />
+            <TimeTooltip valueFormatter={(v) => formatFiat(v, sym, 2)} />
+            <Line dataKey="mid" type="monotone" stroke="var(--color-mid)" strokeDasharray="4 4" strokeWidth={1.25} dot={false} connectNulls {...ANIM} />
+            <Line dataKey="askPx" type="monotone" stroke="var(--color-askPx)" strokeWidth={1.75} dot={false} {...ANIM} />
+            <Line dataKey="bidPx" type="monotone" stroke="var(--color-bidPx)" strokeWidth={1.75} dot={false} {...ANIM} />
+          </LineChart>
+        </ChartFrame>
+      )}
+    </ChartCard>
+  );
+}
+
+/* ── Distance from best price ──────────────────────────────────────────── */
+
+const gapCfg = {
+  sellGap: { label: "Sell ad above best ask", color: C.buy },
+  buyGap: { label: "Buy ad below best bid", color: C.sell },
+} satisfies ChartConfig;
+
+export function GapChart({ points }: { points: MerchantPoint[] }) {
+  const tick = timeTick(spanOf(points, (p) => p.t));
+  const ok = hasAny(points, "sellGap") || hasAny(points, "buyGap");
+  return (
+    <ChartCard
+      title="Distance from best price"
+      description="0 % means their ad was the best on the book"
+      legend={[
+        { label: "Sell ad vs best ask", color: C.buy },
+        { label: "Buy ad vs best bid", color: C.sell },
+      ]}
+    >
+      {!ok ? (
+        <ChartEmpty />
+      ) : (
+        <ChartFrame config={gapCfg} height="sm" label="How far the merchant's prices are from the best market prices">
+          <LineChart data={points} margin={MARGIN}>
+            <CartesianGrid {...GRID} />
+            <XAxis {...axisX} dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={tick} />
+            <YAxis {...axisY} tickFormatter={(v: number) => formatPct(v, { frac: 1 })} />
+            <TimeTooltip valueFormatter={(v) => formatPct(v, { frac: 2 })} />
+            <Line dataKey="sellGap" type="monotone" stroke="var(--color-sellGap)" strokeWidth={1.75} dot={false} {...ANIM} />
+            <Line dataKey="buyGap" type="monotone" stroke="var(--color-buyGap)" strokeWidth={1.75} dot={false} {...ANIM} />
+          </LineChart>
+        </ChartFrame>
+      )}
+    </ChartCard>
+  );
+}
+
+/* ── Orders trend ──────────────────────────────────────────────────────── */
+
+const ordersCfg = { orders: { label: "30-day orders", color: C.fg } } satisfies ChartConfig;
+
+export function OrdersTrendChart({ points }: { points: MerchantPoint[] }) {
+  const rows = points.filter((p) => p.orders != null);
+  const tick = timeTick(spanOf(rows, (p) => p.t));
+  const first = rows[0]?.orders ?? null;
+  const last = rows[rows.length - 1]?.orders ?? null;
+  return (
+    <ChartCard
+      title="Orders trend"
+      description={
+        first != null && last != null
+          ? `30-day completed orders · ${last - first >= 0 ? "+" : ""}${formatCount(last - first)} in range`
+          : "30-day completed orders"
+      }
+    >
+      {rows.length < 2 ? (
+        <ChartEmpty />
+      ) : (
+        <ChartFrame config={ordersCfg} height="sm" label="Thirty-day order count over time">
+          <AreaChart data={rows} margin={MARGIN}>
+            <defs>
+              <FadeGradient id="m-orders" color={C.fg} from={0.18} />
+            </defs>
+            <CartesianGrid {...GRID} />
+            <XAxis {...axisX} dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={tick} />
+            <YAxis {...axisY} width={44} domain={["auto", "auto"]} allowDecimals={false} tickFormatter={(v: number) => formatCount(v)} />
+            <TimeTooltip valueFormatter={(v) => formatCount(v)} />
+            <Area dataKey="orders" type="stepAfter" stroke="var(--color-orders)" strokeWidth={1.5} fill="url(#m-orders)" {...ANIM} />
+          </AreaChart>
+        </ChartFrame>
+      )}
+    </ChartCard>
+  );
+}
+
+/* ── Depth + ad count ──────────────────────────────────────────────────── */
+
+const depthCfg = { depth: { label: "Listed amount", color: C.c2 } } satisfies ChartConfig;
+
+export function DepthChart({ points }: { points: MerchantPoint[] }) {
+  const tick = timeTick(spanOf(points, (p) => p.t));
+  return (
+    <ChartCard title="Listed amount" description={`Total ${sym} across their ads`}>
+      {!hasAny(points, "depth") ? (
+        <ChartEmpty />
+      ) : (
+        <ChartFrame config={depthCfg} height="sm" label="Merchant's listed amount over time">
+          <AreaChart data={points} margin={MARGIN}>
+            <defs>
+              <FadeGradient id="m-depth" color={C.c2} />
+            </defs>
+            <CartesianGrid {...GRID} />
+            <XAxis {...axisX} dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={tick} />
+            <YAxis {...axisY} width={44} tickFormatter={(v: number) => formatCompact(v)} />
+            <TimeTooltip valueFormatter={(v) => `${sym} ${formatCompact(v)}`} />
+            <Area dataKey="depth" type="monotone" stroke="var(--color-depth)" strokeWidth={1.5} fill="url(#m-depth)" {...ANIM} />
+          </AreaChart>
+        </ChartFrame>
+      )}
+    </ChartCard>
+  );
+}
+
+const adsCfg = {
+  sellAds: { label: "Sell ads", color: C.buy },
+  buyAds: { label: "Buy ads", color: C.sell },
+} satisfies ChartConfig;
+
+export function AdCountChart({ points }: { points: MerchantPoint[] }) {
+  const tick = timeTick(spanOf(points, (p) => p.t));
+  const ok = hasAny(points, "buyAds") || hasAny(points, "sellAds");
+  return (
+    <ChartCard
+      title="Live ads"
+      description="Number of ads they had up"
+      legend={[
+        { label: "Sell ads", color: C.buy },
+        { label: "Buy ads", color: C.sell },
+      ]}
+    >
+      {!ok ? (
+        <ChartEmpty />
+      ) : (
+        <ChartFrame config={adsCfg} height="sm" label="Merchant's live ad count over time">
+          <AreaChart data={points} margin={MARGIN}>
+            <CartesianGrid {...GRID} />
+            <XAxis {...axisX} dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={tick} />
+            <YAxis {...axisY} width={28} allowDecimals={false} />
+            <TimeTooltip valueFormatter={(v) => String(Math.round(v))} />
+            <Area dataKey="sellAds" stackId="a" type="stepAfter" stroke="var(--color-sellAds)" fill="var(--color-sellAds)" fillOpacity={0.2} strokeWidth={1.5} {...ANIM} />
+            <Area dataKey="buyAds" stackId="a" type="stepAfter" stroke="var(--color-buyAds)" fill="var(--color-buyAds)" fillOpacity={0.2} strokeWidth={1.5} {...ANIM} />
+          </AreaChart>
+        </ChartFrame>
+      )}
+    </ChartCard>
+  );
+}
+
+/* ── Activity by hour (SLT) ────────────────────────────────────────────── */
+
+const hourCfg = { sweeps: { label: "Sweeps listed", color: C.fg } } satisfies ChartConfig;
+
+export function ActivityByHourChart({
+  hours,
+  source,
+}: {
+  /** 24 rows, hour 0–23 in Sri Lanka time. */
+  hours: { hour: number; sweeps: number }[];
+  source: string;
+}) {
+  const total = hours.reduce((s, h) => s + h.sweeps, 0);
+  const peak = hours.reduce((a, b) => (b.sweeps > a.sweeps ? b : a), hours[0]);
+  return (
+    <ChartCard
+      title="Activity by hour"
+      description={
+        total > 0
+          ? `When they're usually listing (SLT) · busiest ${String(peak.hour).padStart(2, "0")}:00 · ${source}`
+          : `When they're usually listing (SLT) · ${source}`
+      }
+    >
+      {total === 0 ? (
+        <ChartEmpty title="No activity recorded yet" hint="Fills in as the collector sees this merchant across the day." />
+      ) : (
+        <ChartFrame config={hourCfg} height="sm" label="Number of sweeps the merchant was listed in, by hour of day">
+          <BarChart data={hours} margin={MARGIN}>
+            <CartesianGrid {...GRID} />
+            <XAxis {...axisX} dataKey="hour" minTickGap={4} tickFormatter={(h: number) => String(h).padStart(2, "0")} />
+            <YAxis {...axisY} width={32} allowDecimals={false} />
+            <ValueTooltip
+              labelFormatter={(l) => `${String(l).padStart(2, "0")}:00 – ${String(l).padStart(2, "0")}:59`}
+              valueFormatter={(v) => `${Math.round(v)} sweeps`}
+            />
+            <Bar dataKey="sweeps" fill="var(--color-sweeps)" fillOpacity={0.85} radius={[3, 3, 0, 0]} {...ANIM} />
+          </BarChart>
+        </ChartFrame>
+      )}
+    </ChartCard>
+  );
+}
+
+/* ── Completion gauge ──────────────────────────────────────────────────── */
+
+export function CompletionGauge({ rate, orders }: { rate: number | null; orders: number | null }) {
+  const v = rate == null ? 0 : Math.max(0, Math.min(1, rate)) * 100;
+  const color = rate == null ? C.muted : rate >= 0.95 ? C.buy : rate >= 0.85 ? C.warn : C.sell;
+  return (
+    <ChartCard title="Completion rate" description="Share of 30-day orders completed">
+      <div className="relative mx-auto aspect-square w-full max-w-48">
+        <ChartContainer
+          config={{ v: { label: "Completion", color } }}
+          className="aspect-square h-full w-full"
+          role="img"
+          aria-label={rate == null ? "Completion rate unknown" : `Completion rate ${formatPct(rate, { frac: 1 })}`}
+        >
+          <RadialBarChart data={[{ v }]} startAngle={90} endAngle={-270} innerRadius="78%" outerRadius="100%">
+            <PolarAngleAxis type="number" domain={[0, 100]} tick={false} axisLine={false} />
+            <RadialBar dataKey="v" background cornerRadius={8} fill={color} {...ANIM} />
+          </RadialBarChart>
+        </ChartContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-mono text-2xl font-semibold tabular-nums">
+            {rate == null ? "—" : formatPct(rate, { frac: 1 })}
+          </span>
+          <span className="text-[11px] text-muted-foreground">
+            {orders != null ? `${formatCount(orders)} orders` : "no data"}
+          </span>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function Swatch({
-  color,
-  label,
-  dim,
-  dashed,
-}: {
-  color: string;
-  label: string;
-  dim?: boolean;
-  dashed?: boolean;
-}) {
-  return (
-    <span className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-      <span
-        aria-hidden
-        className="inline-block h-[3px] w-3 rounded-full"
-        style={{
-          backgroundColor: dashed ? "transparent" : color,
-          opacity: dim ? 0.45 : 1,
-          borderTop: dashed ? `2px dashed ${color}` : undefined,
-        }}
-      />
-      {label}
-    </span>
-  );
-}
-
-/** 1 · Price chart — merchant's best BUY / best SELL with market median line. */
-export function MerchantPriceChart({
-  points,
-  symbol,
-}: {
-  points: MerchantPoint[];
-  symbol: string;
-}) {
-  const data = points.map((p) => ({
-    t: p.ts * 1000,
-    buy: p.bestBuy,
-    sell: p.bestSell,
-    mid: p.marketMid,
-  }));
-  const hasAny = data.some((d) => d.buy != null || d.sell != null);
-
-  return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Their prices vs market
-        </CardTitle>
-        <div className="flex flex-wrap items-center gap-3">
-          <Swatch color="var(--color-sell)" label="THEIR BUY" />
-          <Swatch color="var(--color-buy)" label="THEIR SELL" />
-          <Swatch color="var(--color-foreground)" label="MARKET MID" dashed dim />
-        </div>
-      </CardHeader>
-      <CardContent>
-        {!hasAny ? (
-          <EmptyChart
-            height={260}
-            msg="Not enough price history for this merchant in the selected range."
-          />
-        ) : (
-          <div className="h-[260px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={data}
-                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
-              >
-                <XAxis
-                  dataKey="t"
-                  type="number"
-                  domain={["dataMin", "dataMax"]}
-                  tick={axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => shortTime(Number(v))}
-                />
-                <YAxis
-                  tick={axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  width={64}
-                  domain={[
-                    (min: number) => min * 0.999,
-                    (max: number) => max * 1.001,
-                  ]}
-                  tickFormatter={(v) => formatFiat(Number(v), symbol, 2)}
-                />
-                <Tooltip
-                  cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }}
-                  {...tooltipStyles}
-                  labelFormatter={(v) => shortTime(Number(v), true)}
-                  formatter={(val, name) => {
-                    const n = Number(val);
-                    if (!Number.isFinite(n)) return ["—", name as string];
-                    return [formatFiat(n, symbol, 2), name as string];
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="buy"
-                  name="Their buy"
-                  stroke="var(--color-sell)"
-                  strokeWidth={1.75}
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="sell"
-                  name="Their sell"
-                  stroke="var(--color-buy)"
-                  strokeWidth={1.75}
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="mid"
-                  name="Market mid"
-                  stroke="var(--color-foreground)"
-                  strokeWidth={1}
-                  strokeOpacity={0.4}
-                  strokeDasharray="3 3"
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** 2 · Spread — `bestSell - bestBuy` over time. */
-export function MerchantSpreadChart({
-  points,
-  symbol,
-}: {
-  points: MerchantPoint[];
-  symbol: string;
-}) {
-  const data = points.map((p) => ({
-    t: p.ts * 1000,
-    spread:
-      p.bestBuy != null && p.bestSell != null ? p.bestSell - p.bestBuy : null,
-  }));
-  const hasAny = data.some((d) => d.spread != null);
-
-  return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Own spread
-        </CardTitle>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          sell − buy
-        </span>
-      </CardHeader>
-      <CardContent>
-        {!hasAny ? (
-          <EmptyChart
-            height={180}
-            msg="Spread chart needs both a BUY and SELL ad at the same tick."
-          />
-        ) : (
-          <div className="h-[180px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={data}
-                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="mSpreadFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-warn)" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="var(--color-warn)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="t"
-                  type="number"
-                  domain={["dataMin", "dataMax"]}
-                  tick={axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => shortTime(Number(v))}
-                />
-                <YAxis
-                  tick={axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  width={54}
-                  tickFormatter={(v) => formatFiat(Number(v), symbol, 2)}
-                />
-                <Tooltip
-                  {...tooltipStyles}
-                  labelFormatter={(v) => shortTime(Number(v), true)}
-                  formatter={(val) => [formatFiat(Number(val), symbol, 2), "Spread"]}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="spread"
-                  stroke="var(--color-warn)"
-                  fill="url(#mSpreadFill)"
-                  strokeWidth={1.5}
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** 3 · Premium vs market — positive = above median, negative = below. */
-export function MerchantPremiumChart({ points }: { points: MerchantPoint[] }) {
-  const data = points.map((p) => {
-    const merchantMid =
-      p.bestBuy != null && p.bestSell != null
-        ? (p.bestBuy + p.bestSell) / 2
-        : p.bestBuy ?? p.bestSell ?? null;
-    const premium =
-      merchantMid != null && p.marketMid != null && p.marketMid > 0
-        ? (merchantMid - p.marketMid) / p.marketMid
-        : null;
-    return { t: p.ts * 1000, premium };
-  });
-  const hasAny = data.some((d) => d.premium != null);
-
-  return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Premium vs market median
-        </CardTitle>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          above = more expensive
-        </span>
-      </CardHeader>
-      <CardContent>
-        {!hasAny ? (
-          <EmptyChart
-            height={180}
-            msg="Not enough overlapping market data yet to compute a premium series."
-          />
-        ) : (
-          <div className="h-[180px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={data}
-                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
-              >
-                <XAxis
-                  dataKey="t"
-                  type="number"
-                  domain={["dataMin", "dataMax"]}
-                  tick={axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => shortTime(Number(v))}
-                />
-                <YAxis
-                  tick={axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  width={50}
-                  tickFormatter={(v) =>
-                    formatPct(Number(v), { frac: 2, sign: true })
-                  }
-                />
-                <Tooltip
-                  {...tooltipStyles}
-                  labelFormatter={(v) => shortTime(Number(v), true)}
-                  formatter={(val) => [
-                    formatPct(Number(val), { frac: 2, sign: true }),
-                    "Premium",
-                  ]}
-                />
-                <ReferenceLine
-                  y={0}
-                  stroke="var(--color-border)"
-                  strokeDasharray="2 4"
-                />
-                <Line
-                  type="monotone"
-                  dataKey="premium"
-                  stroke="var(--color-chart-4)"
-                  strokeWidth={1.5}
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** 4 · Depth over time — total fiat available across all their ads. */
-export function MerchantDepthChart({
-  points,
-  symbol,
-}: {
-  points: MerchantPoint[];
-  symbol: string;
-}) {
-  const data = points.map((p) => ({
-    t: p.ts * 1000,
-    depth: p.totalFiat ?? 0,
-  }));
-
-  return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Depth over time
-        </CardTitle>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          fiat they can fill
-        </span>
-      </CardHeader>
-      <CardContent>
-        {data.length < 2 ? (
-          <EmptyChart height={180} msg="No depth history for this range." />
-        ) : (
-          <div className="h-[180px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={data}
-                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="mDepthFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="t"
-                  type="number"
-                  domain={["dataMin", "dataMax"]}
-                  tick={axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => shortTime(Number(v))}
-                />
-                <YAxis
-                  tick={axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  width={54}
-                  tickFormatter={(v) => `${symbol} ${formatCompact(Number(v))}`}
-                />
-                <Tooltip
-                  {...tooltipStyles}
-                  labelFormatter={(v) => shortTime(Number(v), true)}
-                  formatter={(val) => [
-                    `${symbol} ${formatCompact(Number(val))}`,
-                    "Depth",
-                  ]}
-                />
-                <Area
-                  type="stepAfter"
-                  dataKey="depth"
-                  stroke="var(--color-primary)"
-                  fill="url(#mDepthFill)"
-                  strokeWidth={1.5}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** 5 · Ad count — stacked BUY / SELL ad counts per tick. */
-export function MerchantAdCountChart({ points }: { points: MerchantPoint[] }) {
-  const data = points.map((p) => ({
-    t: p.ts * 1000,
-    buy: p.buyAds ?? 0,
-    sell: p.sellAds ?? 0,
-  }));
-  const hasAny = data.some((d) => d.buy > 0 || d.sell > 0);
-
-  return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Live ad count
-        </CardTitle>
-        <div className="flex items-center gap-3">
-          <Swatch color="var(--color-sell)" label="BUY ADS" />
-          <Swatch color="var(--color-buy)" label="SELL ADS" />
-        </div>
-      </CardHeader>
-      <CardContent>
-        {!hasAny ? (
-          <EmptyChart height={180} msg="No ads observed in this range." />
-        ) : (
-          <div className="h-[180px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={data}
-                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="mAdBuyFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-sell)" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="var(--color-sell)" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="mAdSellFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-buy)" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="var(--color-buy)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="t"
-                  type="number"
-                  domain={["dataMin", "dataMax"]}
-                  tick={axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => shortTime(Number(v))}
-                  minTickGap={48}
-                />
-                <YAxis
-                  tick={axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  width={32}
-                  allowDecimals={false}
-                />
-                <Tooltip
-                  {...tooltipStyles}
-                  labelFormatter={(v) => shortTime(Number(v), true)}
-                  formatter={(val, name) => [String(val), name as string]}
-                />
-                <Area
-                  type="stepAfter"
-                  dataKey="buy"
-                  stackId="ads"
-                  stroke="var(--color-sell)"
-                  fill="url(#mAdBuyFill)"
-                  strokeWidth={1.25}
-                  name="Buy ads"
-                  isAnimationActive={false}
-                />
-                <Area
-                  type="stepAfter"
-                  dataKey="sell"
-                  stackId="ads"
-                  stroke="var(--color-buy)"
-                  fill="url(#mAdSellFill)"
-                  strokeWidth={1.25}
-                  name="Sell ads"
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    </ChartCard>
   );
 }

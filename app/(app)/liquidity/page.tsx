@@ -1,39 +1,42 @@
+import { pageMetadata } from "@/lib/seo";
+import { CloudOff } from "lucide-react";
 import { Topbar } from "@/components/shell/topbar";
-import { SectionHeader } from "@/components/common/section-header";
 import { LiveDot } from "@/components/common/live-dot";
 import { MarketStar } from "@/components/workspace/star-button";
-import { Reveal } from "@/components/common/reveal";
-import { Card, CardContent } from "@/components/ui/card";
-import { Stat } from "@/components/common/stat";
+import { Empty } from "@/components/common/empty";
+import { KpiCard } from "@/components/common/kpi-card";
+import { KpiGrid, PageBody, PageHeader, PageSection } from "@/components/common/page";
 import { FilterBar, type FilterState } from "@/components/market/filter-bar";
+import { RangeTabs } from "@/components/historical/range-tabs";
 import { SlippageSimulator } from "@/components/liquidity/slippage-simulator";
 import { ConcentrationPanel } from "@/components/liquidity/concentration-panel";
 import { DepthHeatmap } from "@/components/liquidity/depth-heatmap";
 import { DepthTrend } from "@/components/liquidity/depth-trend";
-import { Empty } from "@/components/common/empty";
-import { CloudOff } from "lucide-react";
-import { fetchBothSides, normalizeAds } from "@/lib/binance";
+import { ActivityIndex } from "@/components/liquidity/activity-index";
+import { getBook } from "@/lib/market-data";
+import { getExchange, resolvePayTypes } from "@/lib/exchanges";
+import { getActiveExchange } from "@/lib/exchange-server";
 import { buildMarket } from "@/lib/analytics";
-import { concentrationByMerchant } from "@/lib/liquidity";
-import {
-  depthHeatmap,
-  listMarketSnapshots,
-  marketSummary,
-  RANGES,
-  type RangeKey,
-} from "@/lib/db/queries";
-import { ASSET, FIAT, resolveBankPayTypes } from "@/lib/constants";
-import { formatCompact, formatFiat } from "@/lib/format";
-import { RangeTabs } from "@/components/historical/range-tabs";
+import { concentrationByMerchant, type ConcentrationStats } from "@/lib/liquidity";
+import { depthHeatmap, freshness, parseRange } from "@/lib/db/queries";
+import { gateRange } from "@/lib/member-gate";
+import { downsampleBy, historyBundle } from "@/lib/history";
+import { nearTouchImbalance } from "@/lib/near-touch";
+import { AsOf } from "@/components/common/as-of";
+import { activityIndex, type ActivityIndex as Activity } from "@/lib/activity";
+import { ASSET, FIAT } from "@/lib/constants";
+import { formatCompact, formatPct } from "@/lib/format";
 
-export const metadata = { title: "Liquidity" };
+export const metadata = pageMetadata({
+  title: "USDT/LKR P2P Liquidity: Depth & Slippage by Hour",
+  description: "How much USDT you can buy or sell for LKR on Binance P2P and Bybit P2P before the price moves: live fill simulator, depth by merchant and liquidity by hour.",
+  path: "/liquidity",
+});
 export const dynamic = "force-dynamic";
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
 
-function parseFilters(
-  sp: Record<string, string | string[] | undefined>,
-): FilterState {
+function parseFilters(sp: Record<string, string | string[] | undefined>): FilterState {
   return {
     asset: ASSET,
     fiat: FIAT.code,
@@ -42,201 +45,181 @@ function parseFilters(
   };
 }
 
-export default async function LiquidityPage({
-  searchParams,
-}: {
-  searchParams: SP;
-}) {
-  const sp = await searchParams;
-  const filters = parseFilters(sp);
-  const rangeKey = String(sp.range ?? "24h") as RangeKey;
-  const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
-
-  const symbol = FIAT.symbol;
-  const subtitle = `${ASSET} / ${FIAT.code} · ${FIAT.name}`;
-
-  // Live ads for concentration & slippage
-  let concentrationSell = null;
-  let concentrationBuy = null;
-  let liveOk = true;
+async function liveConcentration(
+  ex: Awaited<ReturnType<typeof getActiveExchange>>,
+  filters: FilterState,
+): Promise<{ sell: ConcentrationStats; buy: ConcentrationStats } | null> {
   try {
-    const { buy, sell } = await fetchBothSides({
+    const book = await getBook(ex, {
       asset: filters.asset,
       fiat: filters.fiat,
-      rows: 20,
-      payTypes: resolveBankPayTypes(filters.payType),
-      publisherType: null,
+      payTypes: resolvePayTypes(getExchange(ex), filters.payType),
     });
-    const ads = [
-      ...normalizeAds(buy, "BUY"),
-      ...normalizeAds(sell, "SELL"),
-    ];
-    const market = buildMarket(filters.asset, filters.fiat, ads);
-    concentrationSell = concentrationByMerchant(market.ads, "SELL", "fiat");
-    concentrationBuy = concentrationByMerchant(market.ads, "BUY", "fiat");
+    const market = buildMarket(filters.asset, filters.fiat, [...book.buy, ...book.sell]);
+    return {
+      sell: concentrationByMerchant(market.ads, "SELL", "fiat"),
+      buy: concentrationByMerchant(market.ads, "BUY", "fiat"),
+    };
   } catch {
-    liveOk = false;
+    return null;
   }
+}
 
-  const [snapshots, summary, heatmap] = await Promise.all([
-    listMarketSnapshots(filters.asset, filters.fiat, range),
-    marketSummary(filters.asset, filters.fiat, range),
-    depthHeatmap(filters.asset, filters.fiat, "30d"),
+export default async function LiquidityPage({ searchParams }: { searchParams: SP }) {
+  const sp = await searchParams;
+  const filters = parseFilters(sp);
+  const ex = await getActiveExchange();
+  const adapter = getExchange(ex);
+  const { range, member } = await gateRange(parseRange(sp.range), "24h");
+  const symbol = FIAT.symbol;
+
+  const [conc, bundle, heatmap, activity] = await Promise.all([
+    liveConcentration(ex, filters),
+    historyBundle(ex, filters.asset, filters.fiat, range, { compare: false }),
+    depthHeatmap(ex, filters.asset, filters.fiat),
+    activityIndex(ex, filters.asset, filters.fiat).catch((err): Activity | null => {
+      console.error("[liquidity] activity index", err);
+      return null;
+    }),
   ]);
+  const { points, summary } = bundle;
+  const fresh = freshness(bundle.latestTs);
+  const hasData = points.some((p) => p.samples > 0);
 
-  const latest = snapshots[snapshots.length - 1];
-  const totalLatest =
-    (latest?.bidDepth ?? 0) + (latest?.askDepth ?? 0);
-  const totalAvg =
-    summary?.avgBidDepth != null && summary?.avgAskDepth != null
-      ? summary.avgBidDepth + summary.avgAskDepth
-      : null;
-
-  const depthDelta =
-    totalAvg != null && totalAvg > 0
-      ? (totalLatest - totalAvg) / totalAvg
-      : null;
+  // Near-touch depth (within 1 % of each side's best price). The last bucket
+  // with a value is "now"; a stale feed is labelled as such.
+  const lastWith = (k: "askDepth1" | "bidDepth1") => {
+    for (let i = points.length - 1; i >= 0; i--) if (points[i][k] != null) return points[i][k];
+    return null;
+  };
+  const askNow = lastWith("askDepth1");
+  const bidNow = lastWith("bidDepth1");
+  const askDelta = askNow != null && summary.avgAskDepth1 ? askNow / summary.avgAskDepth1 - 1 : null;
+  const bidDelta = bidNow != null && summary.avgBidDepth1 ? bidNow / summary.avgBidDepth1 - 1 : null;
+  const askSpark = downsampleBy(points, 48, (p) => p.askDepth1).map((p) => p.askDepth1);
+  const bidSpark = downsampleBy(points, 48, (p) => p.bidDepth1).map((p) => p.bidDepth1);
+  const balance = nearTouchImbalance(bidNow, askNow);
 
   return (
     <>
-      <Topbar title="Liquidity" subtitle={subtitle}>
+      <Topbar title="Liquidity" subtitle={`${ASSET} / ${FIAT.code} · ${adapter.label}`}>
         <MarketStar asset={filters.asset} fiat={filters.fiat} />
         <LiveDot label="Live" className="hidden sm:inline-flex" />
       </Topbar>
 
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        <SectionHeader
-          kicker="Liquidity analytics"
-          title={`Can you actually fill size in ${filters.asset}/${filters.fiat}?`}
-          description="Book walker for precise slippage on a target amount, merchant-concentration metrics (HHI + top-N share), and historical depth trends aggregated from the ingest pipeline."
-          right={<RangeTabs value={range} />}
+      <PageBody>
+        <PageHeader
+          eyebrow={`${adapter.label} · liquidity`}
+          title={`Can you fill size in ${filters.asset}/${filters.fiat}?`}
+          description="Simulate a fill against the live book, see who holds the depth, how busy the book is today, and when liquidity peaks."
+          actions={<RangeTabs value={range} member={member} />}
         />
 
-        <FilterBar initial={filters} />
+        <FilterBar initial={filters} payTypes={adapter.payMethods} />
 
-        {!liveOk && snapshots.length === 0 ? (
+        {!conc && !hasData ? (
           <Empty
             icon={CloudOff}
-            title="Couldn't reach Binance P2P"
-            description="Live book can't be fetched and no historical data is available for this market yet."
+            title={`Couldn't reach ${adapter.label} P2P`}
+            description="The live book can't be fetched and there's no stored history for this window yet."
             tone="warn"
           />
         ) : (
           <>
-            <Reveal>
-              <Card className="border-border bg-card/60">
-                <CardContent className="grid grid-cols-2 gap-x-6 gap-y-5 p-5 md:grid-cols-4">
-                  <Stat
-                    label="Current depth"
-                    value={
-                      latest?.bidDepth != null || latest?.askDepth != null
-                        ? `${formatCompact(totalLatest)} ${filters.asset}`
-                        : "—"
-                    }
-                    delta={
-                      depthDelta != null
-                        ? {
-                            value: depthDelta,
-                            format: "pct",
-                            tone: depthDelta < -0.15 ? "sell" : "buy",
-                          }
-                        : undefined
-                    }
-                    footnote={`vs ${range} average`}
-                  />
-                  <Stat
-                    label="Average depth"
-                    value={
-                      totalAvg != null
-                        ? `${formatCompact(totalAvg)} ${filters.asset}`
-                        : "—"
-                    }
-                    footnote={`${snapshots.length} ticks`}
-                  />
-                  <Stat
-                    label="Fiat book"
-                    value={
-                      concentrationSell && concentrationBuy
-                        ? formatFiat(
-                            concentrationSell.total + concentrationBuy.total,
-                            symbol,
-                            0,
-                          )
-                        : "—"
-                    }
-                    footnote="Buy + Sell ads notional"
-                  />
-                  <Stat
-                    label="Concentration (sell)"
-                    value={
-                      concentrationSell
-                        ? concentrationSell.hhi.toFixed(3)
-                        : "—"
-                    }
-                    footnote={
-                      concentrationSell
-                        ? concentrationSell.hhi >= 0.25
-                          ? "HHI · highly concentrated"
-                          : "HHI · competitive"
-                        : undefined
-                    }
-                  />
-                </CardContent>
-              </Card>
-            </Reveal>
+            <KpiGrid>
+              <KpiCard
+                label="Sell ads within 1%"
+                value={askNow != null ? `${formatCompact(askNow)} ${ASSET}` : "—"}
+                change={askDelta}
+                changeLabel={`vs ${range}`}
+                sub={<AsOf ts={bundle.latestTs} stale={fresh.stale} />}
+                spark={askSpark}
+                sparkTone="neutral"
+              />
+              <KpiCard
+                label="Buy ads within 1%"
+                value={bidNow != null ? `${formatCompact(bidNow)} ${ASSET}` : "—"}
+                change={bidDelta}
+                changeLabel={`vs ${range}`}
+                sub="declared, not escrowed"
+                spark={bidSpark}
+                sparkTone="neutral"
+              />
+              <KpiCard
+                label="Book balance ±1%"
+                value={balance != null ? formatPct(balance, { frac: 0, sign: true }) : "—"}
+                sub={
+                  balance == null
+                    ? "no near-price depth yet"
+                    : balance > 0.1
+                      ? "more (declared) buying"
+                      : balance < -0.1
+                        ? "more selling than buying"
+                        : "balanced within 1%"
+                }
+              />
+              <KpiCard
+                label="HHI · Sell ads"
+                value={conc ? conc.sell.hhi.toFixed(3) : "—"}
+                sub={conc ? (conc.sell.hhi >= 0.25 ? "highly concentrated" : conc.sell.hhi >= 0.15 ? "moderate" : "competitive") : "live book unavailable"}
+              />
+            </KpiGrid>
 
-            {liveOk && (
-              <Reveal delay={70}>
-                <SlippageSimulator
-                  asset={filters.asset}
-                  fiat={filters.fiat}
-                />
-              </Reveal>
+            {conc && <SlippageSimulator asset={filters.asset} fiat={filters.fiat} exchange={ex} />}
+
+            <PageSection
+              title="Activity index"
+              description="Last 24 hours vs the 24 hours before, Sri Lanka hours. Trade volume isn't public, so activity is an orders index."
+            >
+              {activity ? (
+                <ActivityIndex data={activity} symbol={symbol} asset={filters.asset} />
+              ) : (
+                <Empty title="Activity index unavailable" description="Couldn't read merchant sweeps right now." />
+              )}
+            </PageSection>
+
+            {conc && (
+              <PageSection title="Concentration" description="Who holds the LKR on each side of the live book.">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <ConcentrationPanel
+                    stats={conc.sell}
+                    symbol={symbol}
+                    title="Sell ads"
+                    subtitle="Liquidity you buy USDT from"
+                  />
+                  <ConcentrationPanel
+                    stats={conc.buy}
+                    symbol={symbol}
+                    title="Buy ads"
+                    subtitle="Liquidity you sell USDT to"
+                  />
+                </div>
+              </PageSection>
             )}
 
-            {liveOk && concentrationSell && concentrationBuy && (
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <Reveal delay={110}>
-                  <ConcentrationPanel
-                    stats={concentrationSell}
-                    symbol={symbol}
-                    title="Concentration · ASK"
-                    subtitle="Who holds the sell-side liquidity"
-                  />
-                </Reveal>
-                <Reveal delay={140}>
-                  <ConcentrationPanel
-                    stats={concentrationBuy}
-                    symbol={symbol}
-                    title="Concentration · BID"
-                    subtitle="Who holds the buy-side liquidity"
-                  />
-                </Reveal>
-              </div>
-            )}
+            <DepthTrend
+              points={points.map((p) => ({
+                ts: p.ts,
+                bidDepth1: p.bidDepth1,
+                askDepth1: p.askDepth1,
+                bidDepth05: p.bidDepth05,
+                askDepth05: p.askDepth05,
+                bidDepth: p.bidDepth,
+                askDepth: p.askDepth,
+              }))}
+              asset={filters.asset}
+            />
 
-            <Reveal delay={180}>
-              <DepthTrend
-                points={snapshots.map((s) => ({
-                  ts: s.ts,
-                  bidDepth: s.bidDepth,
-                  askDepth: s.askDepth,
-                }))}
-                asset={filters.asset}
-              />
-            </Reveal>
-
-            <Reveal delay={220}>
-              <DepthHeatmap
-                cells={heatmap.cells}
-                max={heatmap.max}
-                totalPoints={heatmap.totalPoints}
-                asset={filters.asset}
-              />
-            </Reveal>
+            <DepthHeatmap
+              cells={heatmap.cells}
+              maxAsk={heatmap.maxAsk}
+              maxBid={heatmap.maxBid}
+              totalPoints={heatmap.totalPoints}
+              asset={filters.asset}
+            />
           </>
         )}
-      </div>
+      </PageBody>
     </>
   );
 }

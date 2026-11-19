@@ -1,4 +1,4 @@
-# P2P.LK — Binance P2P Analytics
+# P2P.LK — Binance & Bybit P2P Analytics
 
 Live market data, cross-country arbitrage scanner, merchant analytics,
 time-series history and anomaly detection for the Binance P2P market.
@@ -6,10 +6,11 @@ Dark-first, data-dense, production-ready.
 
 ## Stack
 
-- Next.js 16 (App Router) · React 19 · TypeScript
-- Tailwind CSS v4 · shadcn/ui (Base UI) · Recharts · Lucide
-- Postgres (DO Managed) · Drizzle ORM · `postgres-js` · `tsx` for CLI scripts
-- Data source: Binance P2P public endpoint (no auth required)
+- Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · shadcn/ui
+- **Cloudflare Workers** via `@opennextjs/cloudflare`
+- **Cloudflare D1** (SQLite) + Drizzle ORM · **Workers KV** for the live book
+- **Cron Trigger** (every minute) for ingest · Browser Rendering for QR short-links
+- Data: Binance + Bybit P2P public endpoints, one adapter per exchange (`lib/exchanges/`)
 
 ## Features
 
@@ -41,6 +42,15 @@ Dark-first, data-dense, production-ready.
 - Stars are surfaced in the topbar of every market page; the Merchants table
   has per-row stars. "Save filter" is baked into the filter bar.
 
+**Compare, arbitrage and rates (v2 rebuild)**
+- **Compare** (`/compare`) — Binance vs Bybit head to head, spread overlay,
+  market share, and an order-book constructor (two books side by side).
+- **Arbitrage** (`/arbitrage`) — cross-exchange and cross-method spreads and a
+  profit-per-cycle calculator that can walk the live book.
+- **Exchange rates** (`/rates`) — CBSL and bank TT rates collected every 3 hours
+  from primary sources (see `lib/fx/SOURCES.md` for each source's terms),
+  converter, P2P premium vs the official dollar, remittance route finder.
+
 **Reports (v5)**
 - **Reports** (`/reports`) — Three exportable views: daily recap (reads the
   ingested time-series), arbitrage summary (live cross-market scan) and
@@ -48,52 +58,113 @@ Dark-first, data-dense, production-ready.
   one-click CSV download; the full report can be downloaded as a single
   multi-block CSV or copied to the clipboard.
 
-## Development
+## Development (everything runs locally — no Cloudflare account needed)
 
 ```bash
-cp .env.example .env.local       # paste your DO Managed Postgres pool URL
 npm install
-npm run dev                       # http://localhost:3000
-
-# One-shot ingest (writes a snapshot for all tracked markets)
-npm run ingest
-
-# Continuous local ingest
-npm run ingest:loop               # every 120s, Ctrl-C to stop
-
-# One specific market
-npm run ingest -- USDT:LKR
+cp .dev.vars.example .dev.vars        # set BETTER_AUTH_SECRET, ADMIN_EMAILS
+npm run db:migrate:local              # create local D1 tables
+npm run dev                           # http://localhost:3000
+open "http://localhost:3000/api/dev/tick?all=1"   # pull one round of data
 ```
 
-Tables bootstrap themselves on first DB connection — no manual migration
-step. Both `next dev` and the CLI pick up `.env.local` automatically.
+Worker-runtime check (same bundle Cloudflare will run):
 
-## Production
+```bash
+npm run cf:preview                    # builds + wrangler dev on :8787
+curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"   # fire the cron
+```
 
-DigitalOcean App Platform + DigitalOcean Managed Postgres is the canonical
-deploy. `.do/app.yaml` provisions a web service, an ingest worker and
-attaches your existing DB cluster. Only the Transaction-pool `DATABASE_URL`
-needs to be pasted as a secret in the DO dashboard. Full walkthrough in
-[DEPLOY.md](./DEPLOY.md).
+## Testing
+
+```bash
+npm test            # Vitest unit tests (pure logic, ~450 tests, < 1 s)
+npm run e2e         # Playwright: desktop + 360 px mobile, axe accessibility
+                    # scans; needs `npm run dev` running on :3000
+```
+
+The security review and its fixes are in `SECURITY-REVIEW.md`.
+
+## Accounts (Phase 5)
+
+- **Better Auth on D1** (`lib/auth/*`): email + password, 6-digit email code
+  (or link) to verify, Turnstile on sign-up / sign-in / password reset,
+  rate limits, 30-day sessions.
+- **Onboarding**: name, merchant name, WhatsApp (+94), email, optional
+  Binance/Bybit profile → verify email → *pending review* → an admin approves
+  or rejects at `/admin/members` (emails sent, every action in `audit_log`).
+  Emails in `ADMIN_EMAILS` become admins once verified.
+- **Members** (approved) get `/app` (dashboard), `/account` (profile,
+  password, sessions), server-side alerts (checked every minute by the cron,
+  in-app inbox + email, incl. "taker signal" off-market ads), reports and CSV,
+  7d/30d history, and a merchant blocklist. Watchlists, favourites and saved
+  filters sync across devices; a guest's local data is imported on first
+  sign-in. Market pages stay public.
+- **Local email**: with no Resend key, mail goes to `GET /api/dev/mail`.
+- **Before deploying**, set as secrets: `BETTER_AUTH_SECRET`,
+  `RESEND_API_KEY`, and set `BETTER_AUTH_URL`, `EMAIL_FROM`, `ADMIN_EMAILS`.
+
+## Admin panel (Phase 6)
+
+Everything under `/admin` needs a signed-in admin (role `admin`; the old
+shared `ADMIN_TOKEN` is gone). Every action is written to `audit_log`.
+
+- **Overview** (`/admin`) — users by status, sign-ups, ingest health per
+  exchange and job (stale badges, failures, p50/p95), registry queues, D1 size.
+- **Members** — approve / reject / suspend / make admin.
+- **Registry** — members' suspicious-taker reports wait as *pending* until an
+  admin publishes or rejects them; retract and restore published ones.
+- **Removals** — public un-flag requests.
+- **Audit log** — filterable, paginated, CSV export.
+- **System** — ingest run log, FX source status, retention policy, feature
+  flags (sign-ups open, alert emails, FX collector, site banner) stored in KV,
+  and "collect FX now" / "run retention now".
+
+## API protection
+
+- Every API route goes through `lib/guard.ts`, which handles four things:
+  - Per-IP rate limits using the Workers Rate Limiting bindings `RL_READ`, `RL_WRITE` and `RL_ADMIN`.
+  - Body and query validation with zod.
+  - JSON-only request bodies.
+  - The admin gate (a signed-in account with the admin role), which has its own rate limit.
+- Public removal requests need a Cloudflare Turnstile token. Local development uses Cloudflare's test keys, which always pass.
+- Before deploying, set the real keys:
+  - The secret: `wrangler secret put TURNSTILE_SECRET_KEY`.
+  - The site key: `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, set at build time.
+  - Without a secret, production rejects these requests.
+- Security headers are set in `next.config.ts`.
+
+## Data retention
+
+| Table | Granularity | Kept |
+|---|---|---|
+| market_snapshots | 1/min/exchange | 14 days |
+| market_hourly | hourly OHLC | forever |
+| merchants | latest per merchant | forever |
+| merchant_snapshots | 5-min sweep | 3 days |
+| merchant_hourly | hourly | 180 days |
+| taker_snapshots | on change + daily | 180 days |
 
 ## Architecture
 
 **Data**
-- `lib/binance.ts` — Binance P2P fetcher with URL-cached ISR.
-- `lib/ingest.ts` — Captures snapshots into Postgres (markets + merchants).
-- `lib/db/{schema,client,queries}.ts` — Drizzle schema, postgres-js client
-  (with `prepare: false` for Supabase's transaction pooler), query helpers.
-- `lib/risk.ts` — Anomaly detection from the time-series.
-- `lib/analytics.ts` — Spread, arbitrage, merchant trust scoring.
-- `lib/stats.ts` — SMA, z-score, histogram.
-- `lib/types.ts` — Normalized domain types.
+- `lib/exchanges/{binance,bybit}.ts` — one adapter per exchange behind a
+  shared `ExchangeAdapter` interface; failures raise `UpstreamError`.
+- `lib/ingest/{run,jobs,takers}.ts` — cron jobs: 1-min book, 5-min merchant
+  sweep, hourly rollups, 15-min taker poll, nightly retention. Every run is
+  logged to `ingest_runs`.
+- `lib/live.ts` — latest book in KV; `lib/market-data.ts#getBook` serves pages
+  from KV and only calls the exchange for filtered views.
+- `lib/db/{schema,client,queries}.ts` — D1 schema, Drizzle client, queries
+  (raw rows for ≤24h ranges, hourly rollups beyond).
+- `worker.ts` — Worker entry: OpenNext `fetch` + cron `scheduled`.
+- `lib/risk.ts`, `lib/analytics.ts`, `lib/stats.ts`, `lib/types.ts`.
 
 **Routes**
-- `app/api/p2p/market` — single-market proxy.
-- `app/api/p2p/markets` — multi-market aggregate for arbitrage.
-- `app/api/cron/snapshot` — ingest endpoint (cron).
-- `app/api/history/market` — time-series for one market.
-- `app/api/risk` — computed risk report.
+- `app/api/p2p/market`, `app/api/merchants`, `app/api/liquidity/slippage`,
+  `app/api/history/market`, `app/api/risk` — all take `?exchange=binance|bybit`.
+- `app/api/suspicious/*` — registry + QR check/lookup + removal requests.
+- `app/api/dev/tick` — local-only manual cron tick (404 in production).
 
 **UI**
 - `hooks/use-polling.ts` — Pauses when tab hidden, cancels in-flight fetches.
@@ -103,7 +174,9 @@ needs to be pasted as a secret in the DO dashboard. Full walkthrough in
 
 ## Design language
 
-- Near-black base (`oklch(0.14 0.005 260)`) with a cool undertone.
-- Emerald primary · warm red for sells · amber for warnings.
-- JetBrains Mono everywhere numbers live. Tabular figures throughout.
-- Subtle reveals (IntersectionObserver), card lifts, live-pulse dots.
+- shadcn "neutral" black and white, light / dark / system. The only colour is
+  a subtle green (buy) / red (sell) tint and amber for warnings.
+- Mobile first: bottom tab bar on phones, tables become cards below `md`.
+- Charts are built from `components/charts/kit.tsx` (shared axes, tooltips,
+  legend and one ease-out animation) on shadcn `chart` + Recharts.
+- Monospace tabular figures wherever numbers live.

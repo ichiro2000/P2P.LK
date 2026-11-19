@@ -1,11 +1,12 @@
+import { useId } from "react";
 import { cn } from "@/lib/utils";
 import type { MerchantTier } from "@/lib/merchant-tier";
 import { TIER_LABEL } from "@/lib/merchant-tier";
 
 /**
- * Tiny verified-merchant tier badge — matches Binance's bronze/silver/gold
- * visual convention so users recognise it at a glance. Renders as a small
- * rounded shield with a tier-tinted gradient + a subtle check mark.
+ * Verified-merchant tier badge: a bronze / silver / gold scalloped seal with
+ * a white chevron tick (our own drawing), so traders recognise the level at
+ * a glance.
  *
  * `size="xs"` (default) is intended to sit inline with merchant names;
  * `"sm"` is sized for lists; `"md"` is sized for detail headers.
@@ -30,30 +31,12 @@ export function TierBadge({
 
   return (
     <span
-      className={cn(
-        "inline-flex items-center gap-1 align-middle",
-        className,
-      )}
-      title={`${TIER_LABEL[tier]} Verified Merchant · from Binance`}
+      className={cn("inline-flex items-center gap-1 align-middle", className)}
+      title={`${TIER_LABEL[tier]} verified advertiser (Binance merchant level or Bybit VA / VA2 / VA3 badge)`}
     >
-      <span
-        className={cn(
-          "inline-flex items-center justify-center rounded-[4px] ring-1",
-          dims,
-          TIER_STYLES[tier].wrap,
-        )}
-        style={TIER_STYLES[tier].style}
-      >
-        <CheckIcon className={cn("h-[60%] w-[60%]", TIER_STYLES[tier].check)} />
-      </span>
+      <TierSeal tier={tier} className={dims} />
       {withLabel && (
-        <span
-          className={cn(
-            "font-semibold uppercase tracking-wider",
-            labelSize,
-            TIER_STYLES[tier].label,
-          )}
-        >
+        <span className={cn("font-semibold uppercase tracking-wider", labelSize, TIER_STYLES[tier].label)}>
           {TIER_LABEL[tier]}
         </span>
       )}
@@ -61,64 +44,47 @@ export function TierBadge({
   );
 }
 
-/**
- * Tier colour tokens. Gradients roughly match Binance's own
- * `verified-merchant-{tier}.png` spritesheet so users recognise the badges
- * at a glance without us pulling their CDN assets.
- */
-const TIER_STYLES: Record<
-  MerchantTier,
-  {
-    wrap: string;
-    label: string;
-    check: string;
-    style: React.CSSProperties;
-  }
-> = {
-  bronze: {
-    wrap: "ring-[#a8632a]/40",
-    label: "text-[#c58042]",
-    check: "text-[#3a1d07]",
-    style: {
-      backgroundImage:
-        "linear-gradient(145deg, #f5c08a 0%, #d08a4e 45%, #9b5a24 100%)",
-    },
-  },
-  silver: {
-    wrap: "ring-[#a8adb5]/50",
-    label: "text-[#c9ced6]",
-    check: "text-[#2a2d33]",
-    style: {
-      backgroundImage:
-        "linear-gradient(145deg, #eef2f7 0%, #c1c7d0 45%, #8a9099 100%)",
-    },
-  },
-  gold: {
-    wrap: "ring-[#d4a23b]/50",
-    label: "text-[#f2c35b]",
-    check: "text-[#3a2505]",
-    style: {
-      backgroundImage:
-        "linear-gradient(145deg, #ffe299 0%, #e6ba3d 45%, #b5871f 100%)",
-    },
-  },
-};
+/** 8-lobe scalloped seal (24-unit grid). Tips are rounded by a same-paint
+ *  stroke with round joins, so it reads as a soft rosette, not a star. */
+const SEAL =
+  "M12 1L15.56 3.41L19.78 4.22L20.59 8.44L23 12L20.59 15.56L19.78 19.78L15.56 20.59L12 23L8.44 20.59L4.22 19.78L3.41 15.56L1 12L3.41 8.44L4.22 4.22L8.44 3.41Z";
 
-function CheckIcon({ className }: { className?: string }) {
+/**
+ * Metallic seal with a white chevron tick: bronze / silver / gold from the
+ * theme tokens (--tier-{tier}-1..3, light → dark), a soft top highlight and a
+ * hairline edge. Identical in light and dark mode, like a physical badge.
+ */
+function TierSeal({ tier, className }: { tier: MerchantTier; className?: string }) {
+  // Unique per instance: a shared id breaks when its first copy sits inside a
+  // display:none container (e.g. the phone-card layout on desktop).
+  const id = `p2plk-seal-${tier}-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-    >
+    <svg viewBox="0 0 24 24" className={cn("shrink-0", className)} aria-hidden>
+      <defs>
+        <linearGradient id={id} x1="0.2" y1="0" x2="0.8" y2="1">
+          <stop offset="0%" style={{ stopColor: `var(--tier-${tier}-1)` }} />
+          <stop offset="55%" style={{ stopColor: `var(--tier-${tier}-2)` }} />
+          <stop offset="100%" style={{ stopColor: `var(--tier-${tier}-3)` }} />
+        </linearGradient>
+      </defs>
+      <path d={SEAL} fill={`url(#${id})`} stroke={`url(#${id})`} strokeWidth="1.6" strokeLinejoin="round" />
+      <path d={SEAL} fill="none" stroke="black" strokeOpacity="0.14" strokeWidth="0.6" strokeLinejoin="round" />
+      <ellipse cx="12" cy="8" rx="6.5" ry="3.6" fill="white" opacity="0.22" />
       <path
-        d="M3.5 8.5 L6.5 11.5 L12.5 5"
-        stroke="currentColor"
-        strokeWidth="2.4"
+        d="M7.6 10.4 12 14.6l4.4-4.2"
+        fill="none"
+        stroke="white"
+        strokeWidth="2.6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
   );
 }
+
+/** Label colours (theme tokens; class names written out for Tailwind). */
+const TIER_STYLES: Record<MerchantTier, { label: string }> = {
+  bronze: { label: "text-[color:var(--tier-bronze)]" },
+  silver: { label: "text-[color:var(--tier-silver)]" },
+  gold: { label: "text-[color:var(--tier-gold)]" },
+};

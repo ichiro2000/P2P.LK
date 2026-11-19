@@ -19,6 +19,8 @@ const BINANCE_HOST_SUFFIXES = [
   "bnc.lt",
 ] as const;
 
+const MAX_REDIRECTS = 5;
+
 const BROWSER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
@@ -65,23 +67,32 @@ export async function resolveBinanceShortLink(
   const timer = setTimeout(() => ctrl.abort(), opts?.timeoutMs ?? 5000);
   let wafChallenged = false;
   try {
-    // GET + redirect: "follow" is the default. We use GET rather than HEAD
-    // because Binance's short-link endpoint returns 405 on HEAD. The body is
-    // read-then-discarded; response.url holds the post-redirect location.
-    const res = await fetch(url, {
-      method: "GET",
-      redirect: "follow",
-      signal: ctrl.signal,
-      headers: {
-        "User-Agent": BROWSER_UA,
-        Accept: "text/html,application/xhtml+xml",
-      },
-      // Don't cache short-link resolutions — if Binance ever rotates them
-      // the QR would stop matching against stored reports.
-      cache: "no-store",
-    });
-    const finalUrl = res.url;
-    const finalParsed = safeParseUrl(finalUrl);
+    // GET rather than HEAD because Binance's short-link endpoint returns 405
+    // on HEAD. Redirects are followed by hand so every hop is checked: only
+    // Binance hosts are ever requested (no SSRF through an open redirect).
+    let current = parsed;
+    let res: Response | null = null;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      res = await fetch(current.toString(), {
+        method: "GET",
+        redirect: "manual",
+        signal: ctrl.signal,
+        headers: {
+          "User-Agent": BROWSER_UA,
+          Accept: "text/html,application/xhtml+xml",
+        },
+        cache: "no-store",
+      });
+      const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+      if (!location) break;
+      const next = safeParseUrl(new URL(location, current).toString());
+      if (!next || !/^https?:$/.test(next.protocol) || !isBinanceHost(next.hostname)) return null;
+      current = next;
+      res = null;
+    }
+    if (!res) return null;
+    const finalUrl = current.toString();
+    const finalParsed = current;
     // AWS WAF returns 202 with the same URL + a JS-challenge body. That's
     // the signal to escalate to the headless browser.
     if (
@@ -104,7 +115,7 @@ export async function resolveBinanceShortLink(
 
   // WAF path — dynamic import so the Playwright code never lands in a
   // bundle it shouldn't (and local dev without Chromium just skips it).
-  if (wafChallenged || /\/qr\//.test(url)) {
+  if (wafChallenged || /^\/qr\//.test(parsed.pathname)) {
     console.log(
       `[qr-resolve] escalating to browser (waf=${wafChallenged}) for ${url}`,
     );
@@ -216,7 +227,7 @@ export type BinanceAdvertiserPublic = {
  *  the asset — it's the most common P2P asset and hitting the rest doubles
  *  the request count without materially improving coverage. Order is most-
  *  liquid first so we exit fast when we get a hit on the first try. */
-const PROBE_FIATS = ["USD", "AED", "EUR", "INR", "LKR", "NGN", "RUB"] as const;
+const PROBE_FIATS = ["LKR", "USD"] as const;
 
 export async function fetchBinanceAdvertiserPublic(
   advertiserNo: string,
@@ -242,12 +253,16 @@ export async function fetchBinanceAdvertiserPublic(
   // fall back to scanning `adv/search` for any active ad whose advertiser
   // matches. This only resolves merchants with active ads, but keeps the
   // display-name auto-fill working while we patch.
+  // All probes run in parallel under the same timeout, so the worst case is
+  // one timeout (~4 s) instead of 14 sequential ones (~56 s).
   const fiats = opts?.fiats ?? PROBE_FIATS;
-  for (const fiat of fiats) {
-    for (const tradeType of ["BUY", "SELL"] as const) {
-      const hit = await probeAdvSearch(advertiserNo, fiat, tradeType, timeoutMs);
-      if (hit) return hit;
-    }
+  const probes = fiats.flatMap((fiat) =>
+    (["BUY", "SELL"] as const).map((tt) =>
+      probeAdvSearch(advertiserNo, fiat, tt, timeoutMs),
+    ),
+  );
+  for (const hit of await Promise.all(probes)) {
+    if (hit) return hit;
   }
 
   void opts?.skipBrowser;

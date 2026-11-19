@@ -1,71 +1,119 @@
-import { Topbar } from "@/components/shell/topbar";
-import { SectionHeader } from "@/components/common/section-header";
-import { LiveDot } from "@/components/common/live-dot";
-import { RangeTabs } from "@/components/historical/range-tabs";
-import { Reveal } from "@/components/common/reveal";
-import { Empty } from "@/components/common/empty";
-import { Clock, UserX } from "lucide-react";
+import { Suspense } from "react";
 import Link from "next/link";
+import { ArrowLeft, UserX } from "lucide-react";
+import { Topbar } from "@/components/shell/topbar";
+import { PageBody, PageSection } from "@/components/common/page";
+import { KpiCard } from "@/components/common/kpi-card";
+import { LiveDot } from "@/components/common/live-dot";
+import { Empty } from "@/components/common/empty";
+import { MerchantHeaderCard } from "@/components/merchant/detail/header-card";
+import { RangeSelect } from "@/components/merchant/detail/range-select";
+import { UptimeStrip } from "@/components/merchant/detail/activity-panels";
 import {
-  latestMarketSnapshot,
-  latestMerchantSnapshot,
-  listMarketMids,
-  merchantHeatmapTicks,
-  merchantHistory,
-  RANGES,
-  type RangeKey,
-} from "@/lib/db/queries";
-import { ASSET, FIAT } from "@/lib/constants";
-import { formatSLT } from "@/lib/format";
-import {
-  MerchantHeaderCard,
-  type MerchantHeaderData,
-} from "@/components/merchant/detail/header-card";
-import {
-  MerchantAdCountChart,
-  MerchantDepthChart,
-  MerchantPremiumChart,
-  MerchantPriceChart,
-  MerchantSpreadChart,
+  ActivityByHourChart,
+  AdCountChart,
+  CompletionGauge,
+  DepthChart,
+  GapChart,
+  OrdersTrendChart,
+  PriceVsMarketChart,
   type MerchantPoint,
 } from "@/components/merchant/detail/merchant-charts";
 import {
-  HourHeatmap,
-  UptimeStrip,
-} from "@/components/merchant/detail/activity-panels";
+  RANGES,
+  getMerchant,
+  latestSweepTs,
+  listMarketSnapshots,
+  merchantActivityHours,
+  merchantHistory,
+  parseRange,
+} from "@/lib/db/queries";
+import { merchantStability } from "@/lib/db/insights";
+import { classifyShowcase } from "@/lib/market-insights";
+import { getActiveExchange } from "@/lib/exchange-server";
+import { gateRange } from "@/lib/member-gate";
+import { DEFAULT_EXCHANGE, getExchange } from "@/lib/exchanges";
+import { ASSET, FIAT, SLT_OFFSET_SEC } from "@/lib/constants";
+import { formatFiat, formatPct, formatCount } from "@/lib/format";
+import { ACTIVE_SLACK_SEC, sideGaps } from "@/lib/analytics";
+import { reliabilityScore } from "@/lib/merchant-score";
+import { reliabilityInputs, twoSidedPrices } from "@/lib/db/merchant-directory";
+import { medianOwnSpread, ownSpread } from "@/lib/competitors";
+import { NetOwnSpread, SpreadMedianText } from "@/components/merchant/own-spread";
+import { CompetitorSection, CompetitorSectionSkeleton } from "@/components/merchant/detail/compare-section";
+import { ReliabilityInfo } from "@/components/merchant/reliability-info";
+import { MerchantTradeSection, MerchantTradeSectionSkeleton } from "@/components/merchant/detail/trade-section";
+import { JsonLd, breadcrumbJsonLd } from "@/components/seo/json-ld";
+import { merchantName } from "@/lib/db/seo";
+import { NOINDEX, pageMetadata } from "@/lib/seo";
+import type { Metadata } from "next";
 
-export const metadata = { title: "Merchant detail" };
 export const dynamic = "force-dynamic";
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
 
-function trustScoreFor({
-  completionRate,
-  orders30d,
-  avgReleaseSec,
-}: {
-  completionRate: number;
-  orders30d: number;
-  avgReleaseSec: number | null | undefined;
-}): number {
-  const completionPts = Math.max(0, Math.min(1, completionRate)) * 50;
-  const ordersNorm = Math.min(
-    1,
-    Math.log10(Math.max(1, orders30d)) / Math.log10(2000),
-  );
-  const orderPts = ordersNorm * 30;
-  const releasePts = (() => {
-    if (avgReleaseSec == null) return 12;
-    if (avgReleaseSec <= 60) return 20;
-    if (avgReleaseSec <= 180) return 16;
-    if (avgReleaseSec <= 300) return 12;
-    if (avgReleaseSec <= 600) return 8;
-    return 4;
-  })();
-  return Math.max(
-    0,
-    Math.min(100, Math.round(completionPts + orderPts + releasePts)),
-  );
+/**
+ * Title and description from one primary-key read (name only). The exchange
+ * comes from the visitor's cookie, and crawlers have none, so they always
+ * render the default exchange. A merchant from the other exchange is
+ * `noindex` (Googlebot would see "not found" at that URL), as is any id we
+ * have never seen.
+ */
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const ex = await getActiveExchange();
+  const adapter = getExchange(ex);
+  const m = await merchantName(ex, id, ASSET, FIAT.code).catch(() => null);
+  if (!m) return { title: "Merchant not found", robots: NOINDEX };
+  const meta = pageMetadata({
+    title: `${m.name}: ${adapter.label} P2P Merchant (USDT/LKR)`,
+    description: `${m.name} on ${adapter.label} P2P Sri Lanka: live USDT/LKR buy and sell ads, completion rate, 30-day orders, reliability score and price history vs the market.`,
+    path: `/merchants/${encodeURIComponent(id)}`,
+  });
+  return ex === DEFAULT_EXCHANGE ? meta : { ...meta, robots: NOINDEX };
+}
+
+/** SLT hour of day (half-hour offset rounded down, like the heatmap query). */
+const sltHour = (ts: number) => Math.floor(((ts + SLT_OFFSET_SEC) % 86400) / 3600);
+
+type MarketRow = Awaited<ReturnType<typeof listMarketSnapshots>>[number];
+type HistoryRow = Awaited<ReturnType<typeof merchantHistory>>[number];
+
+/** One row per tick; market values forward-filled, merchant values null
+ *  when they weren't listing so gaps stay visible. */
+function mergeSeries(
+  allTs: number[],
+  marketByTs: Map<number, MarketRow>,
+  merchantByTs: Map<number, HistoryRow>,
+): MerchantPoint[] {
+  let bid: number | null = null;
+  let ask: number | null = null;
+  let mid: number | null = null;
+  const out: MerchantPoint[] = [];
+  for (const ts of allTs) {
+    const mk = marketByTs.get(ts);
+    if (mk) {
+      bid = mk.bestBid ?? bid;
+      ask = mk.bestAsk ?? ask;
+      mid = mk.mid ?? mid;
+    }
+    const mr = merchantByTs.get(ts);
+    const bidPx = mr?.bestBuyPrice ?? null;
+    const askPx = mr?.bestSellPrice ?? null;
+    out.push({
+      t: ts * 1000,
+      bidPx,
+      askPx,
+      mid,
+      sellGap: askPx != null && ask ? Math.max(0, (askPx - ask) / ask) : null,
+      buyGap: bidPx != null && bid ? Math.max(0, (bid - bidPx) / bid) : null,
+      depth: mr?.totalAvailableFiat ?? null,
+      buyAds: mr ? (mr.buyAds ?? 0) : null,
+      sellAds: mr ? (mr.sellAds ?? 0) : null,
+      orders: mr?.ordersMonth ?? null,
+    });
+  }
+  return out;
 }
 
 export default async function MerchantDetailPage({
@@ -77,182 +125,227 @@ export default async function MerchantDetailPage({
 }) {
   const { id } = await params;
   const sp = await searchParams;
-  const rangeKey = String(sp.range ?? "24h") as RangeKey;
-  const range: RangeKey = rangeKey in RANGES ? rangeKey : "24h";
-
+  const { range, member } = await gateRange(parseRange(sp.range), "24h");
+  const ex = await getActiveExchange();
+  const adapter = getExchange(ex);
   const asset = ASSET;
   const fiat = FIAT.code;
-  const symbol = FIAT.symbol;
-  const subtitle = `${asset} / ${fiat} · ${FIAT.name}`;
+  const sym = FIAT.symbol;
+  const subtitle = `${asset} / ${fiat} · ${adapter.label} P2P`;
 
-  const [latest, history, marketMids, latestMarket, heatmapTicks] =
-    await Promise.all([
-      latestMerchantSnapshot(id, asset, fiat).catch(() => undefined),
-      merchantHistory(id, asset, fiat, range).catch(() => []),
-      listMarketMids(asset, fiat, range).catch(() => []),
-      latestMarketSnapshot(asset, fiat).catch(() => undefined),
-      merchantHeatmapTicks(id, asset, fiat).catch(() => []),
-    ]);
+  const [latest, history, market, sweepTs, activityHours, stability, relInputs, twoSided] = await Promise.all([
+    getMerchant(ex, id, asset, fiat),
+    merchantHistory(ex, id, asset, fiat, range).catch(() => []),
+    listMarketSnapshots(ex, asset, fiat, range).catch(() => []),
+    latestSweepTs(ex, asset, fiat).catch(() => null),
+    merchantActivityHours(ex, id, asset, fiat).catch(() => []),
+    merchantStability(ex, asset, fiat, { merchantIds: [id] }).catch(() => []),
+    reliabilityInputs(ex, asset, fiat, [id]).catch(() => null),
+    twoSidedPrices(ex, asset, fiat).catch(() => []),
+  ]);
 
   if (!latest) {
     return (
       <>
         <Topbar title="Merchant not found" subtitle={subtitle} />
-        <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-8">
+        <PageBody width="narrow">
           <Empty
             icon={UserX}
             title="We haven't seen this merchant"
-            description={`No snapshots for advertiser ${id} on ${asset}/${fiat}. They may have never listed on LKR bank transfers, or the ID is wrong.`}
+            description={`No records for advertiser ${id} on ${asset}/${fiat} at ${adapter.label}. They may never have listed on LKR bank transfers, or they trade on the other exchange.`}
             tone="warn"
             action={
-              <Link
-                href="/merchants"
-                className="text-[12px] text-primary hover:underline"
-              >
-                ← Back to merchants directory
+              <Link href="/merchants" className="inline-flex h-10 items-center text-sm underline underline-offset-4">
+                Back to all merchants
               </Link>
             }
           />
-        </div>
+        </PageBody>
       </>
     );
   }
 
-  // Market-ticks in range (distinct ts) — used by uptime strip & hour heatmap.
-  const marketTicks = marketMids.map((r) => r.ts);
-  const merchantTicks = history.map((r) => r.ts);
-  const activeNow =
-    latestMarket != null && latest.ts === latestMarket.ts;
+  /* ── Merge merchant and market series ──────────────────────────────── */
+  // Merchants are sampled by the 5-minute sweep; for short ranges only
+  // sweep-aligned market ticks are kept so presence isn't understated.
+  const short = RANGES[range] <= RANGES["24h"];
+  const marketRows = short ? market.filter((r) => r.ts % 300 === 0) : market;
+  const marketByTs = new Map(marketRows.map((r) => [r.ts, r]));
+  const merchantByTs = new Map(history.map((r) => [r.ts, r]));
+  const allTs = [...new Set([...marketByTs.keys(), ...merchantByTs.keys()])].sort((a, b) => a - b);
 
-  // Build the merged time series. Every market tick gets a point; merchant
-  // fields are null when they weren't listing that tick so gaps are visible.
-  const marketMidByTs = new Map<number, number | null>();
-  for (const r of marketMids) marketMidByTs.set(r.ts, r.mid);
-  const merchantByTs = new Map<number, typeof history[number]>();
-  for (const r of history) merchantByTs.set(r.ts, r);
+  const points = mergeSeries(allTs, marketByTs, merchantByTs);
 
-  const tsUnion = Array.from(
-    new Set<number>([...marketMidByTs.keys(), ...merchantByTs.keys()]),
-  ).sort((a, b) => a - b);
+  /* ── Activity by hour ───────────────────────────────────────────────── */
+  const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, sweeps: 0 }));
+  let hourSource = "last 30 days";
+  if (activityHours.length > 0) {
+    for (const h of activityHours) hours[sltHour(h.ts)].sweeps += h.samples;
+  } else {
+    // Hourly rollups not written yet — fall back to raw sweeps in range.
+    hourSource = `this ${range}`;
+    for (const r of history) hours[sltHour(r.ts)].sweeps += 1;
+  }
 
-  const points: MerchantPoint[] = tsUnion.map((ts) => {
-    const mr = merchantByTs.get(ts);
-    return {
-      ts,
-      bestBuy: mr?.bestBuyPrice ?? null,
-      bestSell: mr?.bestSellPrice ?? null,
-      marketMid: marketMidByTs.get(ts) ?? null,
-      totalFiat: mr?.totalAvailableFiat ?? null,
-      buyAds: mr?.buyAds ?? null,
-      sellAds: mr?.sellAds ?? null,
-    };
-  });
-
-  const trust = trustScoreFor({
-    completionRate: latest.completionRate ?? 0,
-    orders30d: latest.ordersMonth ?? 0,
-    avgReleaseSec: latest.avgReleaseSec,
-  });
-
-  const headerData: MerchantHeaderData = {
-    id: latest.merchantId,
-    name: latest.merchantName,
-    isMerchant: Boolean(latest.isMerchant),
-    userIdentity: latest.userIdentity ?? null,
-    vipLevel: latest.vipLevel ?? null,
-    isActive: activeNow,
-    ordersMonth: latest.ordersMonth,
+  /* ── Header + KPIs ─────────────────────────────────────────────────── */
+  const activeNow = sweepTs != null && latest.lastSeenTs >= sweepTs - ACTIVE_SLACK_SEC;
+  const showcase = stability[0] ? classifyShowcase(stability[0]) : null;
+  const rel = relInputs?.get(id);
+  const reliability = reliabilityScore({
     completionRate: latest.completionRate,
-    avgReleaseSec: latest.avgReleaseSec,
-    bestBuyPrice: activeNow ? latest.bestBuyPrice : null,
-    bestSellPrice: activeNow ? latest.bestSellPrice : null,
-    totalAvailableFiat: activeNow ? latest.totalAvailableFiat : null,
-    buyAds: activeNow ? latest.buyAds : null,
-    sellAds: activeNow ? latest.sellAds : null,
-    lastSeenTs: latest.ts,
-    marketMid: latestMarket?.mid ?? null,
-    asset,
-    fiat,
-    symbol,
-    trustScore: trust,
-  };
-
-  const hasHistory = merchantTicks.length > 0;
+    orders30d: latest.ordersMonth,
+    presence7d: rel?.presence7d ?? null,
+    firstSeenTs: rel?.firstSeenTs ?? latest.firstSeenTs ?? null,
+    // Binance profile (release time, feedback, account age); null → rescaled.
+    avgReleaseSec: rel?.avgReleaseSec ?? null,
+    positive: rel?.positive ?? null,
+    negative: rel?.negative ?? null,
+    registerDays: rel?.registerDays ?? null,
+  });
+  const lastMarket = market.at(-1);
+  const bestBuy = activeNow ? latest.bestBuyPrice : null;
+  const bestSell = activeNow ? latest.bestSellPrice : null;
+  // Per side, against the market's best on that side (F3).
+  const { askGap, bidGap } = sideGaps(
+    { bestSellPrice: bestSell, bestBuyPrice: bestBuy },
+    { bestAsk: lastMarket?.bestAsk ?? null, bestBid: lastMarket?.bestBid ?? null },
+  );
+  const gapText = (g: number | null) => (g == null ? null : g < 0.00005 ? "at the best price" : `+${formatPct(g, { frac: 2 })} vs best`);
+  const ordersSpark = points.map((p) => p.orders);
+  const spread = ownSpread(bestSell, bestBuy);
+  const spreadMedian = medianOwnSpread(twoSided);
 
   return (
     <>
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Live markets", path: "/" },
+          { name: "Merchants", path: "/merchants" },
+          { name: latest.merchantName },
+        ])}
+      />
       <Topbar title={latest.merchantName} subtitle={subtitle}>
         <LiveDot label="Live" className="hidden sm:inline-flex" />
       </Topbar>
 
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        <SectionHeader
-          kicker="Merchant detail"
-          title={latest.merchantName}
-          description={`Per-tick snapshots of this counterparty on ${asset}/${fiat}. Prices, spread, premium vs market, depth, live ad count, uptime and hour-of-day presence — all derived from the ingest worker.`}
-          right={<RangeTabs value={range} />}
+      <PageBody>
+        <Link
+          href="/merchants"
+          className="-my-2 inline-flex h-10 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" /> All merchants
+        </Link>
+
+        <MerchantHeaderCard
+          m={{
+            id: latest.merchantId,
+            name: latest.merchantName,
+            isMerchant: Boolean(latest.isMerchant),
+            userIdentity: latest.userIdentity ?? null,
+            vipLevel: latest.vipLevel ?? null,
+            isActive: activeNow,
+            lastSeenTs: latest.lastSeenTs,
+            profileUrl: adapter.profileUrl(latest.merchantId, asset, fiat),
+            exchangeLabel: adapter.label,
+            exchange: ex,
+            asset,
+            fiat,
+            showcase,
+          }}
         />
 
-        <Reveal>
-          <MerchantHeaderCard m={headerData} />
-        </Reveal>
-
-        {!hasHistory ? (
-          <Empty
-            icon={Clock}
-            title="No history yet"
-            description={`We've seen this merchant once (${formatSLT(latest.ts)} SLT) but don't have multi-tick history in the ${range} window. Come back after a few more ingest ticks.`}
-          />
-        ) : (
-          <>
-            <Reveal delay={60}>
-              <MerchantPriceChart points={points} symbol={symbol} />
-            </Reveal>
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Reveal delay={90}>
-                <MerchantSpreadChart points={points} symbol={symbol} />
-              </Reveal>
-              <Reveal delay={110}>
-                <MerchantPremiumChart points={points} />
-              </Reveal>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Reveal delay={130}>
-                <MerchantDepthChart points={points} symbol={symbol} />
-              </Reveal>
-              <Reveal delay={150}>
-                <MerchantAdCountChart points={points} />
-              </Reveal>
-            </div>
-
-            <Reveal delay={170}>
-              <UptimeStrip
-                marketTicks={marketTicks}
-                merchantTicks={merchantTicks}
-              />
-            </Reveal>
-
-            <Reveal delay={190}>
-              <HourHeatmap merchantTicks={heatmapTicks} />
-            </Reveal>
-          </>
-        )}
-
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground">
-          <span>
-            {history.length} merchant snapshots · {marketMids.length} market
-            ticks in {range}
-          </span>
-          <Link
-            href="/merchants"
-            className="inline-flex items-center gap-1.5 text-primary hover:underline"
-          >
-            ← All merchants
-          </Link>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <CompletionGauge rate={latest.completionRate} orders={latest.ordersMonth} />
+          <div className="grid grid-cols-2 gap-3 lg:col-span-2">
+            <KpiCard
+              label="Their sell ad"
+              value={formatFiat(bestSell, sym, 2)}
+              tone={bestSell != null ? "buy" : undefined}
+              sub={activeNow ? `${latest.sellAds ?? 0} sell ads live${askGap != null ? ` · ${gapText(askGap)}` : ""}` : "Not listing now"}
+            />
+            <KpiCard
+              label="Their buy ad"
+              value={formatFiat(bestBuy, sym, 2)}
+              tone={bestBuy != null ? "sell" : undefined}
+              sub={activeNow ? `${latest.buyAds ?? 0} buy ads live${bidGap != null ? ` · ${gapText(bidGap)}` : ""}` : "Not listing now"}
+            />
+            <KpiCard
+              label="30-day orders"
+              value={formatCount(latest.ordersMonth)}
+              sub={`${formatPct(latest.completionRate, { frac: 1 })} completed`}
+              spark={ordersSpark}
+              sparkTone="neutral"
+            />
+            <KpiCard
+              label="Reliability score"
+              value={String(reliability.score)}
+              sub={`0–100 · completion lower bound ${formatPct(reliability.parts.completionLB, { frac: 1 })}`}
+              icon={<ReliabilityInfo parts={reliability.parts} className="-my-2" />}
+            />
+            <KpiCard
+              className="col-span-2"
+              label="Own spread (best Sell ad − best Buy ad)"
+              value={spread ? formatFiat(spread.lkr, sym, 2) : activeNow ? "One side only" : "—"}
+              sub={
+                spread
+                  ? `${formatPct(spread.pct, { frac: 2 })} of their mid ${formatFiat(spread.mid, sym, 2)}${spread.lkr < 0 ? " · crossed" : ""}`
+                  : activeNow
+                    ? "Needs both a Sell ad and a Buy ad live"
+                    : "Not listing now"
+              }
+              footer={
+                <span className="flex flex-col gap-1">
+                  <SpreadMedianText
+                    median={spreadMedian}
+                    ask={spread ? bestSell : undefined}
+                    bid={bestBuy}
+                    scope="advertisers"
+                  />
+                  {spread && <NetOwnSpread ask={bestSell} bid={bestBuy} />}
+                </span>
+              }
+            />
+          </div>
         </div>
-      </div>
+
+        <Suspense fallback={<CompetitorSectionSkeleton />}>
+          <CompetitorSection exchange={ex} asset={asset} fiat={fiat} id={latest.merchantId} name={latest.merchantName} />
+        </Suspense>
+
+        <Suspense fallback={<MerchantTradeSectionSkeleton />}>
+          <MerchantTradeSection
+            exchange={ex}
+            id={latest.merchantId}
+            adOrders30d={latest.ordersMonth}
+            adCompletion={latest.completionRate}
+          />
+        </Suspense>
+
+        <PageSection
+          title="History"
+          description={`${history.length} merchant sweeps · ${marketRows.length} market points in ${range}`}
+          actions={<RangeSelect value={range} member={member} />}
+        >
+          <div className="space-y-4">
+            <PriceVsMarketChart points={points} />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <GapChart points={points} />
+              <OrdersTrendChart points={points} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <DepthChart points={points} />
+              <AdCountChart points={points} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <ActivityByHourChart hours={hours} source={hourSource} />
+              <UptimeStrip
+                marketTicks={marketRows.map((r) => r.ts)}
+                merchantTicks={history.map((r) => r.ts)}
+              />
+            </div>
+          </div>
+        </PageSection>
+      </PageBody>
     </>
   );
 }

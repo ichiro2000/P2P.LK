@@ -1,90 +1,134 @@
 "use client";
 
 import { useMemo } from "react";
+import { RefreshCw } from "lucide-react";
+import type { ExchangeId } from "@/lib/exchanges";
 import type { MarketSnapshot } from "@/lib/types";
+import type { ShowcaseMap } from "@/lib/market-insights";
 import { usePolling } from "@/hooks/use-polling";
-import { PricePanel } from "./price-panel";
-import { SpreadWidget } from "./spread-widget";
-import { DepthSnapshot } from "./depth-snapshot";
-import { AdsTable } from "./ads-table";
-import { Reveal } from "@/components/common/reveal";
 import { formatRelative } from "@/lib/format";
-import { Activity, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PageSection } from "@/components/common/page";
+import { MarketKpis, type MarketHistoryPoint } from "./market-kpis";
+import { DepthChart } from "./depth-chart";
 import { LiquidityStrip } from "./liquidity-strip";
+import { AmountLadder } from "./amount-ladder";
+import { MethodBreakdown } from "./method-breakdown";
+import { AdsTable } from "./ads-table";
 import type { FilterState } from "./filter-bar";
+import { AmountQuotePanel } from "./amount-quote";
+import { AdPlacement, type OwnPlacement } from "./ad-placement";
+import { useIncludeAllAds, useTradeAmount } from "@/hooks/use-trade-amount";
+import { quoteAmount } from "@/lib/liquidity";
 
+export type { MarketHistoryPoint };
+
+/**
+ * Client shell for the Live Markets page: one poller (20 s) feeds every
+ * panel. Everything below is derived from the 40 ads in the snapshot, so
+ * no panel makes its own request.
+ */
 export function LiveMarket({
   initial,
   filters,
+  exchange,
+  history,
+  showcase,
+  exchangeLabel,
+  payTypeLabel,
+  google,
+  own,
 }: {
   initial: MarketSnapshot;
   filters: FilterState;
+  exchange: ExchangeId;
+  history: MarketHistoryPoint[];
+  showcase: ShowcaseMap;
+  exchangeLabel: string;
+  payTypeLabel: string | null;
+  /** Google USD/LKR mid-market rate (server-rendered), for the placement margins. */
+  google: number | null;
+  own: OwnPlacement;
 }) {
   const url = useMemo(() => {
-    const p = new URLSearchParams({
-      asset: filters.asset,
-      fiat: filters.fiat,
-    });
+    const p = new URLSearchParams({ exchange });
     if (filters.payType) p.set("payTypes", filters.payType);
     if (filters.merchantType === "merchant") p.set("publisher", "merchant");
     return `/api/p2p/market?${p.toString()}`;
-  }, [filters]);
+  }, [filters, exchange]);
 
-  const { data, loading, error, lastUpdated, refetch } = usePolling<
-    MarketSnapshot
-  >(url, { initialData: initial, intervalMs: 20_000 });
-
+  const { data, loading, error, lastUpdated, refetch } = usePolling<MarketSnapshot>(url, {
+    initialData: initial,
+    intervalMs: 20_000,
+  });
   const market = data ?? initial;
+  const [amount] = useTradeAmount();
+  const [includeAll] = useIncludeAllAds();
+  const walkOpts = { includeOffline: includeAll, includeRestricted: includeAll };
+  const quotes = {
+    amount,
+    buy: quoteAmount(market.ads, "SELL", amount, walkOpts),
+    sell: quoteAmount(market.ads, "BUY", amount, walkOpts),
+  };
 
   return (
-    <div className="space-y-5">
-      {/* top price tile + spread + depth */}
+    <div className="space-y-6 lg:space-y-8">
+      <MarketKpis market={market} history={history} quotes={quotes} merchantsOnly={filters.merchantType === "merchant"} />
+
+      <AmountQuotePanel buy={quotes.buy} sell={quotes.sell} amount={amount} scope="the top 20 ads per side" />
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Reveal className="lg:col-span-2">
-          <PricePanel market={market} />
-        </Reveal>
-        <Reveal delay={70} className="flex flex-col gap-4">
-          <SpreadWidget market={market} />
-          <LiquidityStrip market={market} />
-        </Reveal>
+        <DepthChart market={market} className="lg:col-span-2" />
+        <LiquidityStrip market={market} />
       </div>
 
-      {/* depth + ads */}
-      <Reveal delay={100}>
-        <DepthSnapshot market={market} />
-      </Reveal>
+      <PageSection
+        title="Price ladder"
+        description="Average price for four ticket sizes across the visible ads, one order per ad. Same walk as “Price for your amount”."
+      >
+        <AmountLadder market={market} includeAll={includeAll} />
+      </PageSection>
 
-      <Reveal delay={140}>
-        <AdsTable market={market} />
-      </Reveal>
+      <PageSection
+        title="By payment method"
+        description="Average of the best N ads that accept each method. An ad listing several methods counts for each."
+      >
+        <MethodBreakdown market={market} exchange={exchange} payType={filters.payType} />
+      </PageSection>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <Activity
-            className={cn(
-              "h-3 w-3",
-              loading ? "animate-spin text-primary" : "text-primary/70",
-            )}
-            strokeWidth={2}
-          />
-          <span>
-            {error
-              ? `Live feed offline — ${error.message}`
-              : `Live feed · updated ${
-                  lastUpdated ? formatRelative(new Date(lastUpdated)) : "now"
-                }`}
-          </span>
-        </div>
+      <PageSection
+        id="placement"
+        className="scroll-mt-20"
+        title="For merchants: ad placement"
+        description="Where to price your own ad to rank in the top 1, 3 or 5, on the same live book."
+      >
+        <AdPlacement
+          market={market}
+          exchange={exchange}
+          exchangeLabel={exchangeLabel}
+          payTypeLabel={payTypeLabel}
+          merchantsOnly={filters.merchantType === "merchant"}
+          google={google}
+          own={own}
+        />
+      </PageSection>
+
+      <PageSection title="Live ads" description="Top 20 ads per side for the current filters.">
+        <AdsTable market={market} showcase={showcase} exchange={exchange} />
+      </PageSection>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span aria-live="polite" suppressHydrationWarning>
+          {error
+            ? `Live feed offline: ${error.message}`
+            : `Updates every 20 s · last ${lastUpdated ? formatRelative(new Date(lastUpdated)) : "just now"}`}
+        </span>
         <button
           type="button"
           onClick={() => refetch()}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/50 px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className="inline-flex h-10 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2"
         >
-          <RefreshCw
-            className={cn("h-3 w-3", loading && "animate-spin")}
-            strokeWidth={2}
-          />
+          <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
           Refresh
         </button>
       </div>

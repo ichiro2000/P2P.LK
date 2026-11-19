@@ -4,6 +4,11 @@ import type {
   SideStats,
   TradeType,
 } from "./types";
+import { isTradable } from "./liquidity";
+import { reliabilityScore, type ReliabilityParts } from "./merchant-score";
+
+/** Ads priced within this fraction of a side's best price are "near touch". */
+export const NEAR_TOUCH_BAND = 0.02;
 
 /** Quick numeric helpers. */
 function median(arr: number[]): number | null {
@@ -13,24 +18,34 @@ function median(arr: number[]): number | null {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
+/** USDT one order on this ad can take: available, capped by the max order. */
+function orderSizeAsset(a: NormalizedAd) {
+  const byMax = a.maxOrder > 0 && a.price > 0 ? a.maxOrder / a.price : Infinity;
+  return Math.max(0, Math.min(a.available, byMax));
+}
+
 /**
- * Volume-weighted average price across the provided ads.
- * For BUY side: seller's ask prices (what you'd pay to buy asset).
- * For SELL side: buyer's bid prices (what you'd receive to sell asset).
+ * Near-touch VWAP: price weighted by the USDT one order could take, over
+ * the ads already filtered to the ±2 % band.
  */
 function vwap(ads: NormalizedAd[]): number | null {
-  if (!ads.length) return null;
   let num = 0;
   let den = 0;
   for (const a of ads) {
-    num += a.price * a.available;
-    den += a.available;
+    const w = orderSizeAsset(a);
+    num += a.price * w;
+    den += w;
   }
   return den > 0 ? num / den : null;
 }
 
+/** Ads within ±`band` of the side's best price. */
+export function nearTouch(ads: NormalizedAd[], best: number, band = NEAR_TOUCH_BAND) {
+  return ads.filter((a) => Math.abs(a.price / best - 1) <= band);
+}
+
 export function sideStats(ads: NormalizedAd[], tradeType: TradeType): SideStats {
-  const filtered = ads.filter((a) => a.tradeType === tradeType);
+  const filtered = ads.filter((a) => a.tradeType === tradeType && a.price > 0);
   if (!filtered.length) {
     return {
       tradeType,
@@ -38,37 +53,38 @@ export function sideStats(ads: NormalizedAd[], tradeType: TradeType): SideStats 
       bestPrice: null,
       medianPrice: null,
       vwap: null,
+      nearTouchCount: 0,
       totalAvailable: 0,
       totalAvailableFiat: 0,
+      tradableAvailable: 0,
+      excludedCount: 0,
     };
   }
 
-  // On BUY side (merchants buying fiat for asset), *lower* price is better for seller of fiat.
-  // On SELL side (merchants selling asset for fiat), *lower* price is better for buyer.
-  //
-  // Binance already returns ads pre-sorted by best-price. To be defensive:
-  //  - BUY (you sell USDT → they pay fiat) → best = highest price
-  //  - SELL (you buy USDT → you pay fiat)  → best = lowest price
+  //  - BUY ads (bids, you sell USDT)  → best = highest price
+  //  - SELL ads (asks, you buy USDT)  → best = lowest price
   const prices = filtered.map((a) => a.price);
-  const best =
-    tradeType === "BUY"
-      ? Math.max(...prices)
-      : Math.min(...prices);
+  const best = tradeType === "BUY" ? Math.max(...prices) : Math.min(...prices);
+  const near = nearTouch(filtered, best);
 
-  const totalAvailable = filtered.reduce((s, a) => s + a.available, 0);
-  const totalAvailableFiat = filtered.reduce(
-    (s, a) => s + a.available * a.price,
-    0,
-  );
+  let tradableAvailable = 0;
+  let excludedCount = 0;
+  for (const a of filtered) {
+    if (isTradable(a)) tradableAvailable += a.available;
+    else excludedCount += 1;
+  }
 
   return {
     tradeType,
     count: filtered.length,
     bestPrice: best,
-    medianPrice: median(prices),
-    vwap: vwap(filtered),
-    totalAvailable,
-    totalAvailableFiat,
+    medianPrice: median(near.map((a) => a.price)),
+    vwap: vwap(near),
+    nearTouchCount: near.length,
+    totalAvailable: filtered.reduce((s, a) => s + a.available, 0),
+    totalAvailableFiat: filtered.reduce((s, a) => s + a.available * a.price, 0),
+    tradableAvailable,
+    excludedCount,
   };
 }
 
@@ -85,9 +101,6 @@ export function buildMarket(
   const sell = sideStats(ads, "SELL");
 
   // Spread: cost of round-trip = SELL-side ask − BUY-side bid.
-  //   If you bought USDT on SELL side (paying .sell.bestPrice) and
-  //   immediately sold it on BUY side (receiving .buy.bestPrice),
-  //   you'd lose (sell.bestPrice − buy.bestPrice) per unit.
   const spread =
     sell.bestPrice != null && buy.bestPrice != null
       ? sell.bestPrice - buy.bestPrice
@@ -115,6 +128,40 @@ export function buildMarket(
 
 /** ── Merchant analytics ───────────────────────────────────────────────── */
 
+/** The market's best price per side, the reference for merchant gaps. */
+export type SideRefs = {
+  /** Lowest ask (where takers buy USDT). */
+  bestAsk: number | null;
+  /** Highest bid (where takers sell USDT). */
+  bestBid: number | null;
+};
+
+/** Gap from a merchant's best ad to the market's best on that side, as a
+ *  fraction, ≥ 0 and lower = better. Null when they don't quote the side. */
+export function sideGaps(
+  m: { bestSellPrice: number | null; bestBuyPrice: number | null },
+  refs: SideRefs,
+) {
+  const askGap =
+    m.bestSellPrice != null && refs.bestAsk
+      ? Math.max(0, (m.bestSellPrice - refs.bestAsk) / refs.bestAsk)
+      : null;
+  const bidGap =
+    m.bestBuyPrice != null && refs.bestBid
+      ? Math.max(0, (refs.bestBid - m.bestBuyPrice) / refs.bestBid)
+      : null;
+  return { askGap, bidGap };
+}
+
+/** 100 at the best price, minus one point per basis point behind it, on
+ *  the merchant's better side. 0 when they quote neither side. */
+export function competitivenessFrom(askGap: number | null, bidGap: number | null) {
+  const gaps = [askGap, bidGap].filter((g): g is number => g != null);
+  if (!gaps.length) return 0;
+  const bps = Math.min(...gaps) * 10_000;
+  return Math.max(0, Math.round(100 - bps));
+}
+
 export type MerchantSummary = {
   id: string;
   name: string;
@@ -122,7 +169,8 @@ export type MerchantSummary = {
   userIdentity?: string;
   grade?: number;
   vipLevel?: number | null;
-  orders30d: number;
+  /** null = the exchange didn't send a 30-day count. */
+  orders30d: number | null;
   completionRate: number;
   avgReleaseSec?: number;
   avgResponseSec?: number;
@@ -134,24 +182,48 @@ export type MerchantSummary = {
   bestBuyPrice: number | null;
   /** Merchant's best SELL price (lower is better) */
   bestSellPrice: number | null;
-  /** Deviation from market median, positive = premium, negative = discount. */
+  /** (their best ask − market best ask) / market best ask. ≥ 0, lower is better. */
+  askVsBest: number | null;
+  /** (market best bid − their best bid) / market best bid. ≥ 0, lower is better. */
+  bidVsBest: number | null;
+  /**
+   * @deprecated kept for API compatibility. Now the per-side gap to the
+   * best price (ask side if they quote asks, else bid side), never the
+   * old cross-side "vs ask median".
+   */
   premiumVsMedian: number | null;
-  /** Trust score 0..100 derived from completion rate, order count, release time. */
+  /** Reliability score 0..100 (see `lib/merchant-score.ts`). Name kept for API compatibility. */
   trustScore: number;
-  /** Competitiveness 0..100 — how aggressive their pricing is. */
+  scoreParts?: ReliabilityParts;
+  /** 100 − basis points behind the best price on their better side (0..100). */
   competitiveness: number;
   payMethods: string[];
 };
 
+function sideRefsFrom(ads: NormalizedAd[]): SideRefs {
+  let bestAsk: number | null = null;
+  let bestBid: number | null = null;
+  for (const a of ads) {
+    if (!(a.price > 0)) continue;
+    if (a.tradeType === "SELL") bestAsk = bestAsk == null ? a.price : Math.min(bestAsk, a.price);
+    else bestBid = bestBid == null ? a.price : Math.max(bestBid, a.price);
+  }
+  return { bestAsk, bestBid };
+}
+
 /**
  * Aggregate per-merchant analytics from a flat list of normalized ads.
- * `marketMedian` is the median price across the full market, used for premium calc.
+ * Gaps and competitiveness are measured per side against the best ask /
+ * best bid of the same ad list (pass `refs` to override). The second
+ * argument used to be the ask median; a number is still accepted and
+ * ignored so older callers keep compiling.
  */
 export function summarizeMerchants(
   ads: NormalizedAd[],
-  marketMedian: number | null,
+  refs?: SideRefs | number | null,
 ): MerchantSummary[] {
-  const map = new Map<string, MerchantSummary & { _prices: number[] }>();
+  const r: SideRefs = refs != null && typeof refs === "object" ? refs : sideRefsFrom(ads);
+  const map = new Map<string, MerchantSummary>();
 
   for (const a of ads) {
     let m = map.get(a.merchant.id);
@@ -164,26 +236,24 @@ export function summarizeMerchants(
         totalAvailableFiat: 0,
         bestBuyPrice: null,
         bestSellPrice: null,
+        askVsBest: null,
+        bidVsBest: null,
         premiumVsMedian: null,
         trustScore: 0,
         competitiveness: 0,
         payMethods: [],
-        _prices: [],
       };
       map.set(a.merchant.id, m);
     }
     m.adCount += 1;
     m.totalAvailableFiat += a.available * a.price;
-    m._prices.push(a.price);
 
     if (a.tradeType === "BUY") {
       m.buyAds += 1;
-      m.bestBuyPrice =
-        m.bestBuyPrice == null ? a.price : Math.max(m.bestBuyPrice, a.price);
+      m.bestBuyPrice = m.bestBuyPrice == null ? a.price : Math.max(m.bestBuyPrice, a.price);
     } else {
       m.sellAds += 1;
-      m.bestSellPrice =
-        m.bestSellPrice == null ? a.price : Math.min(m.bestSellPrice, a.price);
+      m.bestSellPrice = m.bestSellPrice == null ? a.price : Math.min(m.bestSellPrice, a.price);
     }
 
     for (const pm of a.payMethods) {
@@ -193,68 +263,16 @@ export function summarizeMerchants(
 
   const summaries: MerchantSummary[] = [];
   for (const m of map.values()) {
-    const avgPrice =
-      m._prices.length > 0
-        ? m._prices.reduce((s, p) => s + p, 0) / m._prices.length
-        : null;
-
-    const premium =
-      avgPrice != null && marketMedian != null && marketMedian > 0
-        ? (avgPrice - marketMedian) / marketMedian
-        : null;
-
-    // Trust score: weighted blend of completion rate, order volume, release speed.
-    //   completion (0..1)           → 50 pts
-    //   orders (log-scaled, cap 2k) → 30 pts
-    //   release time (faster=better) → 20 pts
-    const completionPts = Math.max(0, Math.min(1, m.completionRate)) * 50;
-
-    const ordersNorm = Math.min(
-      1,
-      Math.log10(Math.max(1, m.orders30d)) / Math.log10(2000),
-    );
-    const orderPts = ordersNorm * 30;
-
-    const releasePts = (() => {
-      if (m.avgReleaseSec == null) return 12; // neutral default
-      if (m.avgReleaseSec <= 60) return 20;
-      if (m.avgReleaseSec <= 180) return 16;
-      if (m.avgReleaseSec <= 300) return 12;
-      if (m.avgReleaseSec <= 600) return 8;
-      return 4;
-    })();
-
-    const trust = Math.round(completionPts + orderPts + releasePts);
-
-    // Competitiveness: how close is best ad to market median.
-    //   within 0.1% of median → 100
-    //   1% away               → 60
-    //   2% away               → 30
-    //   >3%                   → 0
-    const dev =
-      marketMedian != null && avgPrice != null
-        ? Math.abs(avgPrice - marketMedian) / marketMedian
-        : null;
-    const competitiveness =
-      dev == null
-        ? 0
-        : dev < 0.001
-          ? 100
-          : dev < 0.005
-            ? 85
-            : dev < 0.01
-              ? 60
-              : dev < 0.02
-                ? 30
-                : dev < 0.03
-                  ? 10
-                  : 0;
-
+    const { askGap, bidGap } = sideGaps(m, r);
+    const rel = reliabilityScore({ completionRate: m.completionRate, orders30d: m.orders30d });
     summaries.push({
       ...m,
-      premiumVsMedian: premium,
-      trustScore: Math.max(0, Math.min(100, trust)),
-      competitiveness,
+      askVsBest: askGap,
+      bidVsBest: bidGap,
+      premiumVsMedian: askGap ?? bidGap,
+      trustScore: rel.score,
+      scoreParts: rel.parts,
+      competitiveness: competitivenessFrom(askGap, bidGap),
     });
   }
 
@@ -262,24 +280,33 @@ export function summarizeMerchants(
 }
 
 /**
- * Directory row — a merchant plus whether they're on the live book right now
- * and when we last saw them. Used by the merchants page to render both active
- * and inactive counterparties.
- *
- * `isActive` means the merchant has ≥1 BUY or SELL ad on the live book right
- * now. Merchants carried over from history but not currently listing are
- * `isActive = false`.
+ * Directory row — a merchant from the full sweep (`merchants` table) with
+ * whether they were listing in the latest sweep.
  */
 export type MerchantRow = MerchantSummary & {
+  /** Listing in the latest 5-minute sweep (lastSeenTs ≥ latest sweep − 120 s). */
   isActive: boolean;
-  /** Unix seconds of the most recent observation (live > historical). */
+  /** Unix seconds of the most recent sweep that saw them. */
   lastSeenTs: number;
+  /** Unix seconds first seen by our collector (null if unknown). */
+  firstSeenTs?: number | null;
+  /** 0..1 share of tracked hours in the last 7 days they listed (null if unknown). */
+  presence7d?: number | null;
+  /** Binance profile (lib/ingest/profiles.ts); null when not collected / Bybit. */
+  positiveRate?: number | null;
+  /** positive + negative reviews. */
+  feedbackCount?: number | null;
+  /** Days since they registered on the exchange. */
+  registerDays?: number | null;
 };
 
 export type KnownMerchantInput = {
   merchantId: string;
   merchantName: string;
   lastSeenTs: number;
+  firstSeenTs?: number | null;
+  /** Hours in the last 7 days with ≥ 1 sweep seeing them. */
+  presenceHours?: number | null;
   isMerchant: boolean | null;
   userIdentity: string | null;
   userGrade: number | null;
@@ -292,98 +319,111 @@ export type KnownMerchantInput = {
   bestBuyPrice: number | null;
   bestSellPrice: number | null;
   totalAvailableFiat: number | null;
+  /** Binance profile fields (all optional; null = not collected). */
+  positive?: number | null;
+  negative?: number | null;
+  positiveRate?: number | null;
+  registerDays?: number | null;
 };
 
-/**
- * Merge live merchants (with full MerchantSummary analytics) and historical
- * directory rows. Live data always wins; historical rows fill in the long tail
- * of merchants not currently on the book.
- */
-export function mergeMerchantDirectory(
-  liveMerchants: MerchantSummary[],
-  knownMerchants: KnownMerchantInput[],
-  marketMedian: number | null,
-  nowTs: number,
-): MerchantRow[] {
-  const byId = new Map<string, MerchantRow>();
+/** A merchant counts as active if the latest sweep (or the one before) saw them. */
+export const ACTIVE_SLACK_SEC = 120;
 
-  for (const m of liveMerchants) {
-    // Active = at least one live BUY or SELL ad right now. summarizeMerchants
-    // only emits merchants that contributed an ad, so this is effectively
-    // always true — asserted explicitly so the invariant can't drift.
-    const hasLiveAd = m.buyAds + m.sellAds >= 1;
-    byId.set(m.id, {
-      ...m,
-      isActive: hasLiveAd,
-      lastSeenTs: nowTs,
-    });
+/**
+ * The merchant directory, built from the full 5-minute sweep (the
+ * `merchants` table), not the top-20 book:
+ *   - active  = seen in the latest sweep (`lastSeenTs ≥ latestSweepTs − 120`)
+ *   - gaps    = per side, vs the best ask / best bid among active merchants
+ *   - score   = reliability (Wilson completion + volume + presence + tenure)
+ * `liveAds` (optional, any book) only adds pay-method names.
+ */
+export function buildMerchantDirectory(args: {
+  known: KnownMerchantInput[];
+  latestSweepTs: number | null;
+  /** Hours of data in the 7-day window (presence denominator). */
+  trackedHours7d?: number | null;
+  liveAds?: NormalizedAd[];
+  nowTs?: number;
+}): MerchantRow[] {
+  const { known, latestSweepTs } = args;
+  const nowTs = args.nowTs ?? Math.floor(Date.now() / 1000);
+  const sweep = latestSweepTs ?? Math.max(0, ...known.map((k) => k.lastSeenTs));
+  const isActive = (k: KnownMerchantInput) => sweep > 0 && k.lastSeenTs >= sweep - ACTIVE_SLACK_SEC;
+
+  // Per-side reference: the best price among merchants listing now.
+  const refs: SideRefs = { bestAsk: null, bestBid: null };
+  for (const k of known) {
+    if (!isActive(k)) continue;
+    if (k.bestSellPrice != null && k.bestSellPrice > 0)
+      refs.bestAsk = refs.bestAsk == null ? k.bestSellPrice : Math.min(refs.bestAsk, k.bestSellPrice);
+    if (k.bestBuyPrice != null && k.bestBuyPrice > 0)
+      refs.bestBid = refs.bestBid == null ? k.bestBuyPrice : Math.max(refs.bestBid, k.bestBuyPrice);
   }
 
-  for (const k of knownMerchants) {
-    if (byId.has(k.merchantId)) continue;
-    const completionRate = k.completionRate ?? 0;
-    const orders30d = k.ordersMonth ?? 0;
-    const avgReleaseSec = k.avgReleaseSec ?? undefined;
+  const methods = new Map<string, string[]>();
+  for (const a of args.liveAds ?? []) {
+    const list = methods.get(a.merchant.id) ?? [];
+    for (const pm of a.payMethods) if (!list.includes(pm.name)) list.push(pm.name);
+    methods.set(a.merchant.id, list);
+  }
 
-    const completionPts = Math.max(0, Math.min(1, completionRate)) * 50;
-    const ordersNorm = Math.min(
-      1,
-      Math.log10(Math.max(1, orders30d)) / Math.log10(2000),
-    );
-    const orderPts = ordersNorm * 30;
-    const releasePts = (() => {
-      if (avgReleaseSec == null) return 12;
-      if (avgReleaseSec <= 60) return 20;
-      if (avgReleaseSec <= 180) return 16;
-      if (avgReleaseSec <= 300) return 12;
-      if (avgReleaseSec <= 600) return 8;
-      return 4;
-    })();
-    const trust = Math.max(
-      0,
-      Math.min(100, Math.round(completionPts + orderPts + releasePts)),
-    );
-
-    // No live ads → no premium or competitiveness. Derive a rough proxy from
-    // the merchant's last-known best prices if the market median is available.
-    const approxMid =
-      k.bestBuyPrice != null && k.bestSellPrice != null
-        ? (k.bestBuyPrice + k.bestSellPrice) / 2
-        : k.bestBuyPrice ?? k.bestSellPrice ?? null;
-    const premiumVsMedian =
-      approxMid != null && marketMedian != null && marketMedian > 0
-        ? (approxMid - marketMedian) / marketMedian
-        : null;
-
-    byId.set(k.merchantId, {
+  const denom = args.trackedHours7d ?? null;
+  const rows: MerchantRow[] = known.map((k) => {
+    const active = isActive(k);
+    // Prices only mean something while they're listing.
+    const prices = {
+      bestSellPrice: active ? k.bestSellPrice : null,
+      bestBuyPrice: active ? k.bestBuyPrice : null,
+    };
+    const { askGap, bidGap } = sideGaps(prices, refs);
+    const presence7d =
+      k.presenceHours != null && denom != null && denom > 0 ? Math.min(1, k.presenceHours / denom) : null;
+    const rel = reliabilityScore({
+      completionRate: k.completionRate,
+      orders30d: k.ordersMonth,
+      presence7d,
+      firstSeenTs: k.firstSeenTs ?? null,
+      avgReleaseSec: k.avgReleaseSec,
+      positive: k.positive ?? null,
+      negative: k.negative ?? null,
+      registerDays: k.registerDays ?? null,
+      nowTs,
+    });
+    return {
       id: k.merchantId,
       name: k.merchantName,
       isMerchant: Boolean(k.isMerchant),
       userIdentity: k.userIdentity ?? undefined,
       grade: k.userGrade ?? undefined,
       vipLevel: k.vipLevel ?? null,
-      orders30d,
-      completionRate,
-      avgReleaseSec,
-      adCount: (k.buyAds ?? 0) + (k.sellAds ?? 0),
-      buyAds: k.buyAds ?? 0,
-      sellAds: k.sellAds ?? 0,
+      orders30d: k.ordersMonth,
+      completionRate: k.completionRate ?? 0,
+      avgReleaseSec: k.avgReleaseSec ?? undefined,
+      adCount: active ? (k.buyAds ?? 0) + (k.sellAds ?? 0) : 0,
+      buyAds: active ? (k.buyAds ?? 0) : 0,
+      sellAds: active ? (k.sellAds ?? 0) : 0,
       totalAvailableFiat: k.totalAvailableFiat ?? 0,
       bestBuyPrice: k.bestBuyPrice,
       bestSellPrice: k.bestSellPrice,
-      premiumVsMedian,
-      trustScore: trust,
-      competitiveness: 0,
-      payMethods: [],
-      isActive: false,
+      askVsBest: askGap,
+      bidVsBest: bidGap,
+      premiumVsMedian: askGap ?? bidGap,
+      trustScore: rel.score,
+      scoreParts: rel.parts,
+      competitiveness: active ? competitivenessFrom(askGap, bidGap) : 0,
+      payMethods: methods.get(k.merchantId) ?? [],
+      isActive: active,
       lastSeenTs: k.lastSeenTs,
-    });
-  }
+      firstSeenTs: k.firstSeenTs ?? null,
+      presence7d,
+      positiveRate: k.positiveRate ?? null,
+      feedbackCount: k.positive != null && k.negative != null ? k.positive + k.negative : null,
+      registerDays: k.registerDays ?? null,
+    };
+  });
 
-  return Array.from(byId.values()).sort((a, b) => {
-    // Active merchants rank above inactive; then by trust score.
+  return rows.sort((a, b) => {
     if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
     return b.trustScore - a.trustScore;
   });
 }
-

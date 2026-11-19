@@ -1,13 +1,10 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartCard } from "@/components/charts/kit";
 import { formatPct, formatSLT } from "@/lib/format";
-import { SLT_OFFSET_SEC } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 /**
- * Uptime ribbon — a single horizontal strip split into N buckets across the
- * selected range. Each bucket is coloured by how often the merchant appeared
- * in market ticks that fell inside it. Lets the reader eyeball reliability
- * across time without needing a full presence log.
+ * Uptime ribbon: the range split into buckets, each shaded by how often the
+ * merchant was on the book during the sweeps that fell inside it.
  */
 export function UptimeStrip({
   marketTicks,
@@ -20,215 +17,60 @@ export function UptimeStrip({
 }) {
   if (marketTicks.length === 0) {
     return (
-      <Card className="card-lift border-border bg-card/60">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Uptime ribbon
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-[11px] text-muted-foreground">
-            No market ticks in this range yet.
-          </div>
-        </CardContent>
-      </Card>
+      <ChartCard title="Uptime" description="No sweeps in this range yet.">
+        <div className="h-8 rounded-md border border-dashed border-border" />
+      </ChartCard>
     );
   }
 
   const first = marketTicks[0];
   const last = marketTicks[marketTicks.length - 1];
-  const span = Math.max(1, last - first);
-  const width = span / buckets;
-
-  type Cell = { present: number; total: number };
-  const cells: Cell[] = Array.from({ length: buckets }, () => ({
-    present: 0,
-    total: 0,
-  }));
-  const merchantSet = new Set(merchantTicks);
-
+  const width = Math.max(1, last - first) / buckets;
+  const cells = Array.from({ length: buckets }, () => ({ present: 0, total: 0 }));
+  const seen = new Set(merchantTicks);
+  let present = 0;
   for (const t of marketTicks) {
-    const idx = Math.min(buckets - 1, Math.floor((t - first) / width));
-    cells[idx].total += 1;
-    if (merchantSet.has(t)) cells[idx].present += 1;
+    const c = cells[Math.min(buckets - 1, Math.floor((t - first) / width))];
+    c.total += 1;
+    if (seen.has(t)) {
+      c.present += 1;
+      present += 1;
+    }
   }
-
-  const overallTotal = marketTicks.length;
-  const overallPresent = marketTicks.filter((t) => merchantSet.has(t)).length;
-  const uptime = overallTotal > 0 ? overallPresent / overallTotal : 0;
-
-  const firstLabel = formatSLT(first);
-  const lastLabel = formatSLT(last);
+  const uptime = present / marketTicks.length;
 
   return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Uptime ribbon
-        </CardTitle>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          {overallPresent}/{overallTotal} ticks · {formatPct(uptime, { frac: 1 })}
-        </span>
-      </CardHeader>
-      <CardContent>
-        <div className="flex h-8 w-full overflow-hidden rounded-md border border-border bg-muted/30">
-          {cells.map((c, i) => {
-            const fill =
-              c.total === 0 ? 0 : Math.max(0, Math.min(1, c.present / c.total));
-            const tone = toneForFraction(fill, c.total === 0);
-            return (
-              <div
-                key={i}
-                className={cn("flex-1 border-r border-border/40 last:border-r-0", tone)}
-                title={
-                  c.total === 0
-                    ? "No market ticks in this slice"
-                    : `${c.present}/${c.total} ticks · ${formatPct(fill, { frac: 0 })}`
-                }
-              />
-            );
-          })}
-        </div>
-        <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
-          <span>{firstLabel}</span>
-          <span>{lastLabel}</span>
-        </div>
-      </CardContent>
-    </Card>
+    <ChartCard
+      title="Uptime"
+      description={`On the book in ${present} of ${marketTicks.length} sweeps`}
+      actions={<span className="font-mono text-sm tabular-nums">{formatPct(uptime, { frac: 1 })}</span>}
+      contentClassName="px-4"
+    >
+      <div className="flex h-8 w-full gap-px overflow-hidden rounded-md" role="img" aria-label={`Uptime ${formatPct(uptime, { frac: 1 })}`}>
+        {cells.map((c, i) => {
+          const f = c.total ? c.present / c.total : 0;
+          return (
+            <div
+              key={i}
+              className={cn("flex-1", tone(f, c.total === 0))}
+              title={c.total ? `${c.present}/${c.total} sweeps` : "No sweeps in this slice"}
+            />
+          );
+        })}
+      </div>
+      <div className="mt-2 flex justify-between font-mono text-[10px] text-muted-foreground">
+        <span>{formatSLT(first)}</span>
+        <span>{formatSLT(last)}</span>
+      </div>
+    </ChartCard>
   );
 }
 
-function toneForFraction(f: number, empty: boolean): string {
-  if (empty) return "bg-muted/40";
+function tone(f: number, empty: boolean) {
+  if (empty) return "bg-muted/50";
   if (f >= 0.9) return "bg-[color:var(--color-buy)]/80";
-  if (f >= 0.6) return "bg-[color:var(--color-buy)]/55";
-  if (f >= 0.3) return "bg-[color:var(--color-warn)]/55";
-  if (f > 0) return "bg-[color:var(--color-sell)]/50";
+  if (f >= 0.6) return "bg-[color:var(--color-buy)]/50";
+  if (f >= 0.3) return "bg-[color:var(--color-warn)]/50";
+  if (f > 0) return "bg-[color:var(--color-sell)]/45";
   return "bg-muted";
-}
-
-/**
- * 7×24 hour-of-day heatmap showing when the merchant is usually online. Good
- * for "best time to catch them" questions — rows are days (Mon → Sun in local
- * time), columns are hours. The input ticks are a wider window (30d) than the
- * currently-selected range tab so the weekday pattern is readable; otherwise
- * a 24h range would paint at most one row.
- */
-export function HourHeatmap({
-  merchantTicks,
-}: {
-  merchantTicks: number[];
-}) {
-  type Cell = { count: number };
-  const grid: Cell[][] = Array.from({ length: 7 }, () =>
-    Array.from({ length: 24 }, () => ({ count: 0 })),
-  );
-
-  // How many distinct calendar days (in SLT) actually appear in the series —
-  // used to normalize cell intensity. If a cell has 1 tick but we've only seen
-  // that weekday once, it deserves 100% intensity, not a sliver.
-  const distinctDays = new Set<string>();
-  let firstTs: number | null = null;
-  let lastTs: number | null = null;
-
-  for (const t of merchantTicks) {
-    // Bucket in Asia/Colombo so rows/columns match what SLT users see on
-    // their live clock. See SLT_OFFSET_SEC for background.
-    const d = new Date((t + SLT_OFFSET_SEC) * 1000);
-    // Monday-first: 0=Mon … 6=Sun
-    const jsDow = d.getUTCDay();
-    const dow = (jsDow + 6) % 7;
-    const hour = d.getUTCHours();
-    grid[dow][hour].count += 1;
-    distinctDays.add(
-      `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`,
-    );
-    if (firstTs === null || t < firstTs) firstTs = t;
-    if (lastTs === null || t > lastTs) lastTs = t;
-  }
-
-  let max = 0;
-  for (const row of grid) for (const c of row) if (c.count > max) max = c.count;
-
-  if (max === 0) {
-    return (
-      <Card className="card-lift border-border bg-card/60">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            When they&apos;re usually online
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-[11px] text-muted-foreground">
-            No listing history yet. Heatmap fills in as we see this merchant
-            across days and hours.
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const rowLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const coverageLabel =
-    firstTs && lastTs
-      ? `${formatSLT(firstTs, { dateStyle: "short" })} → ${formatSLT(lastTs, { dateStyle: "short" })}`
-      : "";
-
-  return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          When they&apos;re usually online
-        </CardTitle>
-        <div className="flex flex-col items-end gap-0.5">
-          <span className="font-mono text-[10px] text-muted-foreground">
-            SLT · darker = more ticks · {distinctDays.size}d covered
-          </span>
-          {coverageLabel && (
-            <span className="font-mono text-[9px] text-muted-foreground/70">
-              {coverageLabel}
-            </span>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1 pl-8 font-mono text-[9px] text-muted-foreground">
-            {Array.from({ length: 24 }, (_, h) => (
-              <div key={h} className="flex-1 text-center">
-                {h % 3 === 0 ? String(h).padStart(2, "0") : ""}
-              </div>
-            ))}
-          </div>
-          {grid.map((row, d) => (
-            <div key={d} className="flex items-center gap-1">
-              <div className="w-7 shrink-0 font-mono text-[10px] text-muted-foreground">
-                {rowLabels[d]}
-              </div>
-              <div className="flex flex-1 gap-0.5">
-                {row.map((cell, h) => {
-                  const f = cell.count / max;
-                  return (
-                    <div
-                      key={h}
-                      className="h-4 flex-1 rounded-[2px]"
-                      style={{
-                        backgroundColor:
-                          cell.count === 0
-                            ? "var(--color-muted)"
-                            : `color-mix(in srgb, var(--color-primary) ${
-                                20 + f * 70
-                              }%, transparent)`,
-                      }}
-                      title={`${rowLabels[d]} ${String(h).padStart(2, "0")}:00 — ${cell.count} tick${cell.count === 1 ? "" : "s"}`}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
 }

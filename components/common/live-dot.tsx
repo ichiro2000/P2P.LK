@@ -15,8 +15,8 @@ export function LiveDot({
       )}
     >
       <span className="relative flex h-2 w-2">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-75" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[color:var(--color-buy)] opacity-50" />
+        <span className="relative inline-flex h-2 w-2 rounded-full bg-[color:var(--color-buy)]" />
       </span>
       {label && <span>{label}</span>}
     </span>

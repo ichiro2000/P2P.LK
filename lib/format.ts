@@ -32,6 +32,17 @@ export function formatCompact(n: number | null | undefined): string {
   }).format(n);
 }
 
+/**
+ * A count of things (ads, orders, merchants…): always a whole number.
+ * Averages are rounded. Up to 9,999 shown in full ("1,234"); above that
+ * compact ("12.3K") — the decimal there is thousands, not a fraction.
+ */
+export function formatCount(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const r = Math.round(n);
+  return Math.abs(r) < 10_000 ? formatInt(r) : formatCompact(r);
+}
+
 /** Plain integer with thousand separators. */
 export function formatInt(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
@@ -116,7 +127,9 @@ export function formatSLT(
         ? new Date(input)
         : input;
   if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "—";
-  const key = JSON.stringify(opts ?? {});
+  // `undefined` values matter ({ dateStyle: undefined } = time only), but
+  // JSON.stringify drops them — keep them in the key so formats never collide.
+  const key = JSON.stringify(opts ?? {}, (_k, v) => (v === undefined ? "∅" : v));
   let f = dfCache.get(key);
   if (!f) {
     f = new Intl.DateTimeFormat("en-GB", {

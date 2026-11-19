@@ -1,68 +1,6 @@
-/**
- * Shape of the Binance P2P public `adv/search` response.
- * Only fields the app actually uses are typed strictly;
- * everything else falls through unknown to stay resilient to backend changes.
- */
+/** Normalized domain types shared by every exchange adapter. */
 
 export type TradeType = "BUY" | "SELL";
-
-export type PayTypeBadge = {
-  identifier: string;
-  tradeMethodName: string;
-  tradeMethodShortName?: string;
-  tradeMethodBgColor?: string;
-};
-
-export type BinanceAdvertiser = {
-  userNo: string;
-  nickName: string;
-  /** "merchant" or "user" */
-  userType?: string;
-  /** e.g. MASS_MERCHANT, BLOCK_MERCHANT */
-  userIdentity?: string;
-  userGrade?: number;
-  /** Binance's actual tier driver (1 = Bronze, 2 = Silver, 3 = Gold).
-   *  Only populated when userType = "merchant". */
-  vipLevel?: number | null;
-  monthOrderCount?: number;
-  /** 0..1 */
-  monthFinishRate?: number;
-  /** 0..1 — positive review rate */
-  positiveRate?: number;
-  /** seconds */
-  avgReleaseTimeOfLatestOnline?: number;
-  /** seconds */
-  avgResponseTime?: number;
-};
-
-export type BinanceAdv = {
-  advNo: string;
-  classify?: string;
-  tradeType: TradeType;
-  asset: string;
-  fiatUnit: string;
-  price: string;
-  minSingleTransAmount: string;
-  maxSingleTransAmount: string;
-  tradableQuantity: string;
-  surplusAmount: string;
-  tradeMethods: PayTypeBadge[];
-  isTradable?: boolean;
-  autoReplyMsg?: string;
-};
-
-export type BinanceAdItem = {
-  adv: BinanceAdv;
-  advertiser: BinanceAdvertiser;
-};
-
-export type BinanceSearchResponse = {
-  code?: string;
-  message?: string | null;
-  success?: boolean;
-  total?: number;
-  data: BinanceAdItem[];
-};
 
 /** ── Domain types (normalized for app use) ─────────────────────────────── */
 
@@ -97,6 +35,23 @@ export type NormalizedAd = {
     short?: string;
     color?: string;
   }[];
+  /**
+   * Advertiser online right now. Bybit sends `isOnline`; Binance doesn't
+   * expose it (its search only lists tradable ads), so it stays undefined.
+   * `undefined` = unknown, treated as online.
+   */
+  online?: boolean;
+  /**
+   * The ad only accepts takers who meet conditions beyond a normal verified
+   * account: a minimum completion rate or order count, a verification
+   * order, or (Binance) a KYC / BTC-position limit. Such ads are left out
+   * of walks and tradable depth by default. `undefined` = none known.
+   */
+  restricted?: boolean;
+  /** Every counterparty condition we could read, human readable
+   *  ("≥ 85% completion (30d)", "account ≥ 15 days", …). Includes soft
+   *  ones (account age, nationality, extra KYC) that don't set `restricted`. */
+  restrictions?: string[];
   merchant: {
     id: string;
     name: string;
@@ -105,10 +60,14 @@ export type NormalizedAd = {
     userIdentity?: string;
     /** Binance `userGrade` — merchant-vs-user flag, NOT the tier. */
     grade?: number;
-    /** Binance `vipLevel` (1/2/3) — the real tier: bronze / silver / gold. */
+    /** Tier level 1/2/3 → bronze / silver / gold. Binance `vipLevel`;
+     *  Bybit derived from the VA / VA2 / VA3 auth tags. */
     vipLevel?: number | null;
-    orders30d: number;
+    /** Completed orders in the last 30 days. `null` = the exchange didn't
+     *  send a 30-day count (never a lifetime count in disguise). */
+    orders30d: number | null;
     completionRate: number; // 0..1
+    /** Not sent by either search endpoint today; kept for profile data. */
     avgReleaseSec?: number;
     avgResponseSec?: number;
   };
@@ -118,13 +77,30 @@ export type NormalizedAd = {
 export type SideStats = {
   tradeType: TradeType;
   count: number;
+  /** Top of book: lowest ask / highest bid among all listed ads. */
   bestPrice: number | null;
+  /**
+   * Near-touch median: median price of the ads within ±2 % of this side's
+   * best price (`NEAR_TOUCH_BAND`). Far-off ads are ignored so a thin book
+   * padded with 10 %-off listings doesn't drag it.
+   */
   medianPrice: number | null;
+  /**
+   * Near-touch VWAP: average price of the ads within ±2 % of the best,
+   * weighted by the USDT one order could take from each ad
+   * (min(available, maxOrder / price)).
+   */
   vwap: number | null;
-  /** Total available across top N ads, in asset units */
+  /** Ads inside the ±2 % near-touch band (the median / VWAP inputs). */
+  nearTouchCount?: number;
+  /** Total available across top N ads, in asset units (every listed ad). */
   totalAvailable: number;
   /** Total available in fiat (price × amount) across top N ads */
   totalAvailableFiat: number;
+  /** USDT on online, unrestricted ads only — what a typical taker can reach. */
+  tradableAvailable?: number;
+  /** Ads left out of `tradableAvailable` (offline or restricted). */
+  excludedCount?: number;
 };
 
 /** Full market snapshot used by live overview & arbitrage. */

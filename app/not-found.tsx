@@ -1,15 +1,14 @@
 import Link from "next/link";
 import { Topbar } from "@/components/shell/topbar";
-import { Sidebar } from "@/components/shell/sidebar";
+import { AppShell } from "@/components/shell/app-shell";
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar />
+    <AppShell>
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar title="Not found" subtitle="404" />
         <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center px-4 py-24 text-center">
-          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
+          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             404 · No such market
           </div>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
@@ -27,6 +26,6 @@ export default function NotFound() {
           </Link>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }

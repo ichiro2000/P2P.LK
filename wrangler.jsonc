@@ -1,0 +1,64 @@
+// Cloudflare Worker config for P2P.LK v2.
+// IDs below are placeholders for local dev — replaced with real ones when we
+// deploy to the production Cloudflare account (phase 9).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "p2p-lk",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  // esbuild's keepNames wraps functions in __name(); next-themes serialises
+  // its no-flash theme script with Function#toString, so that helper ends up
+  // in the page where it doesn't exist and the script throws.
+  "keep_names": false,
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": { "enabled": true },
+
+  // One cron, every minute. lib/ingest/run.ts dispatches by minute (UTC):
+  //   every 1 min   -> top of book, Binance + Bybit (KV, 100/side) + market_snapshots
+  //                    + server-side alerts (lib/alerts/evaluate.ts)
+  //   every 5 min   -> deep merchant sweep + hourly rollups (+ merchant profiles)
+  //   :07 every 15  -> suspicious-taker poll
+  //   :03 and :33   -> Google USD/LKR mid-market (fx_google)
+  //   :17 every 3 h -> CBSL + bank FX rates (fx)
+  //   20:30 UTC     -> retention cleanup (02:00 Sri Lanka time)
+  // Feature flags in /admin/system can pause FX collection and alert emails.
+  "triggers": { "crons": ["* * * * *"] },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "p2p-lk",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "kv_namespaces": [
+    { "binding": "LIVE", "id": "00000000000000000000000000000000" },
+    { "binding": "NEXT_INC_CACHE_KV", "id": "00000000000000000000000000000001" }
+  ],
+  "browser": { "binding": "BROWSER" },
+  // Cloudflare Email Service (transactional mail from p2p.lk). Workers Paid
+  // includes 3,000 emails a month per account; lib/email/deliver.ts caps us
+  // below that.
+  "send_email": [{ "name": "EMAIL" }],
+
+  // Per-IP rate limits (Workers Rate Limiting API; period must be 10 or 60s).
+  //   RL_READ  - public JSON API reads + member data
+  //   RL_WRITE - public writes and QR resolves (outbound calls, browser)
+  //   RL_ADMIN - admin routes
+  "ratelimits": [
+    { "name": "RL_READ", "namespace_id": "7101", "simple": { "limit": 240, "period": 60 } },
+    { "name": "RL_WRITE", "namespace_id": "7102", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RL_ADMIN", "namespace_id": "7103", "simple": { "limit": 30, "period": 60 } }
+  ],
+  "services": [
+    { "binding": "WORKER_SELF_REFERENCE", "service": "p2p-lk" }
+  ],
+  "vars": {
+    "NEXT_PUBLIC_SITE_URL": "http://localhost:3000"
+  }
+}

@@ -81,3 +81,7 @@ export const MERCHANT_TYPES = [
 ] as const;
 
 export type MerchantTypeId = (typeof MERCHANT_TYPES)[number]["id"];
+
+/** P2P.LK community updates (WhatsApp group). Shown at the end of onboarding,
+ *  in the review/approval emails and on the member dashboard. */
+export const COMMUNITY_WHATSAPP_URL = "https://chat.whatsapp.com/KNPschwF1hhBi0Y2560gX1";

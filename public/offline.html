@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en-LK">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="noindex" />
+    <title>Offline · P2P.LK</title>
+    <link rel="icon" href="/icon-192.png" />
+    <style>
+      /* Static page served by the service worker when there is no network.
+         System colours only (Canvas/CanvasText follow light/dark mode). */
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+          max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+        background: Canvas;
+        color: CanvasText;
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main { max-width: 26rem; text-align: center; }
+      img { width: 56px; height: 56px; border-radius: 14px; }
+      h1 { margin: 16px 0 8px; font-size: 1.375rem; letter-spacing: -0.01em; }
+      p { margin: 0 0 20px; opacity: 0.75; }
+      button {
+        min-height: 44px;
+        padding: 0 20px;
+        border-radius: 10px;
+        border: 1px solid currentColor;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icon-192.png" alt="" />
+      <h1>You're offline</h1>
+      <p>P2P.LK needs a connection to show live rates. Your alert rules keep running on our servers while you are away.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+    <script>
+      // Back online → reload the page the visitor was trying to open.
+      window.addEventListener("online", function () { location.reload(); });
+    </script>
+  </body>
+</html>

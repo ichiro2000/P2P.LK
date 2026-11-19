@@ -1,62 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addReport, listSuspicious } from "@/lib/db/suspicious";
-import { checkAdminToken } from "@/lib/admin-auth";
+import { z } from "zod";
+import { rateLimit, readJson, zRequiredText, zText } from "@/lib/guard";
+import { audit } from "@/lib/member-data";
+import { isAdmin, memberFromRequest } from "@/lib/auth/session";
 import {
   fetchBinanceAdvertiserPublic,
   resolveBinanceProfile,
 } from "@/lib/qr-resolve";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-
-type PostBody = {
+const PostBody = z.object({
   /** Either the full decoded QR string or a pre-parsed advertiserNo. */
-  decoded?: unknown;
-  displayName?: unknown;
-  reason?: unknown;
-  notes?: unknown;
-  reporter?: unknown;
-};
+  decoded: zRequiredText(2048, "`decoded` is required (decoded QR content or advertiserNo)."),
+  reason: zRequiredText(120, "`reason` is required (e.g. \"4th Party Scam\")."),
+  displayName: zText(120),
+  notes: zText(1000),
+  reporter: zText(120),
+});
 
-function str(v: unknown, max: number): string | null {
-  if (typeof v !== "string") return null;
-  const trimmed = v.trim();
-  if (!trimmed) return null;
-  return trimmed.slice(0, max);
-}
-
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const limited = await rateLimit(req, "read");
+  if (limited) return limited;
   const rows = await listSuspicious();
   return NextResponse.json({ reports: rows });
 }
 
+/** Members submit (→ pending, an admin publishes it); admins publish directly. */
 export async function POST(req: NextRequest) {
-  const auth = checkAdminToken(req.headers.get("x-admin-token"));
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: 401 });
-  }
-
-  let body: PostBody;
-  try {
-    body = (await req.json()) as PostBody;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  const decoded = str(body.decoded, 2048);
-  const reason = str(body.reason, 120);
-  if (!decoded) {
-    return NextResponse.json(
-      { error: "`decoded` is required (decoded QR content or advertiserNo)." },
-      { status: 400 },
-    );
-  }
-  if (!reason) {
-    return NextResponse.json(
-      { error: "`reason` is required (e.g. \"4th Party Scam\")." },
-      { status: 400 },
-    );
-  }
+  const limited = await rateLimit(req, "write", "report");
+  if (limited) return limited;
+  const who = await memberFromRequest(req);
+  if (!who.ok) return who.res;
+  const viewer = who.viewer;
+  const admin = isAdmin(viewer);
+  const body = await readJson(req, PostBody);
+  if (!body.ok) return body.res;
+  const { decoded, reason } = body.data;
 
   // Resolve the QR — short-links get followed server-side so we store the
   // real advertiserNo, not an opaque redirect URL. Essential for dedupe: the
@@ -75,7 +54,7 @@ export async function POST(req: NextRequest) {
   // When the caller didn't pass a displayName, try to fill it in from our
   // local merchant snapshots → Binance. Keeps the registry useful when the
   // poster was in a hurry and just uploaded the QR.
-  let displayName = str(body.displayName, 120);
+  let displayName = body.data.displayName;
   if (!displayName) {
     const live = await fetchBinanceAdvertiserPublic(ref.userId).catch(
       () => null,
@@ -83,14 +62,27 @@ export async function POST(req: NextRequest) {
     if (live?.nickName) displayName = live.nickName.slice(0, 120);
   }
 
+  // QR resolution is Binance-only for now; Bybit QR support comes with the
+  // Bybit profile endpoint.
   const inserted = await addReport({
-    binanceUserId: ref.userId,
+    exchange: "binance",
+    userId: ref.userId,
     profileUrl: ref.profileUrl,
     displayName,
     reason,
-    notes: str(body.notes, 1000),
-    reporter: str(body.reporter, 120),
+    notes: body.data.notes,
+    reporter: body.data.reporter ?? viewer.merchantName,
+    status: admin ? "active" : "pending",
+    submittedBy: viewer.id,
   });
+  await audit({
+    actorId: viewer.id,
+    actorEmail: viewer.email,
+    action: admin ? "registry.publish" : "registry.submit",
+    targetType: "suspicious_report",
+    targetId: String(inserted.id),
+    detail: { userId: inserted.userId, reason: inserted.reason },
+  }).catch(() => undefined);
 
-  return NextResponse.json({ report: inserted }, { status: 201 });
+  return NextResponse.json({ report: inserted, pending: !admin }, { status: 201 });
 }

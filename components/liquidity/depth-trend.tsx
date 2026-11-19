@@ -1,149 +1,102 @@
 "use client";
 
+import { CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 import {
-  Area,
-  ComposedChart,
-  Line,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCompact } from "@/lib/format";
-import { sma } from "@/lib/stats";
+  ANIM,
+  C,
+  ChartCard,
+  ChartEmpty,
+  ChartFrame,
+  GRID,
+  MARGIN,
+  TimeTooltip,
+  axisX,
+  axisY,
+  timeTick,
+  type ChartConfig,
+} from "@/components/charts/kit";
+import { formatCompact, formatInt } from "@/lib/format";
 
 export type DepthPoint = {
   ts: number;
+  /** Near-touch depth (USDT within 1 % / 0.5 % of each side's best). */
+  bidDepth1: number | null;
+  askDepth1: number | null;
+  bidDepth05: number | null;
+  askDepth05: number | null;
+  /** Legacy top-20 sums, shown only when no near-touch data exists yet. */
   bidDepth: number | null;
   askDepth: number | null;
 };
 
 /**
- * Depth (BID+ASK) over time with a rolling-20 SMA line.
- * Surfaces macro liquidity trends that a single snapshot can't.
+ * Near-touch depth per side over time. The sides are NOT added together:
+ * sell ads are escrowed USDT, buy ads are declared budgets. Missing buckets
+ * stay gaps. Falls back to the old top-20 sums (labelled) for windows
+ * recorded before near-touch depth existed.
  */
-export function DepthTrend({
-  points,
-  asset,
-}: {
-  points: DepthPoint[];
-  asset: string;
-}) {
-  const totals = points.map((p) =>
-    (p.bidDepth ?? 0) + (p.askDepth ?? 0),
-  );
-  const ma = sma(totals, 20);
-
-  const data = points.map((p, i) => ({
+export function DepthTrend({ points, asset }: { points: DepthPoint[]; asset: string }) {
+  const near = points.some((p) => p.askDepth1 != null || p.bidDepth1 != null);
+  const data = points.map((p) => ({
     t: p.ts * 1000,
-    total: totals[i],
-    ma: ma[i],
+    ask: near ? p.askDepth1 : p.askDepth,
+    bid: near ? p.bidDepth1 : p.bidDepth,
+    ask05: near ? p.askDepth05 : null,
+    bid05: near ? p.bidDepth05 : null,
   }));
-
-  const hasData = data.length >= 2;
+  const asks = data.map((d) => d.ask).filter((v): v is number => v != null);
+  const config = {
+    ask: { label: near ? "Sell ads ±1%" : "Sell ads, top 20", color: C.buy },
+    bid: { label: near ? "Buy ads ±1% (declared)" : "Buy ads, top 20", color: C.sell },
+    ask05: { label: "Sell ads ±0.5%", color: C.buy },
+    bid05: { label: "Buy ads ±0.5%", color: C.sell },
+  } satisfies ChartConfig;
 
   return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Total depth trend
-        </CardTitle>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          Buy + Sell ads ({asset}) · SMA20
-        </span>
-      </CardHeader>
-      <CardContent>
-        <div className="h-[200px] w-full">
-          {!hasData ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              Waiting for enough snapshots…
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart
-                data={data}
-                margin={{ top: 4, right: 24, left: 0, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="totalDepthFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="t"
-                  type="number"
-                  domain={["dataMin", "dataMax"]}
-                  tick={{
-                    fill: "var(--color-muted-foreground)",
-                    fontSize: 10,
-                    fontFamily: "var(--font-mono)",
-                  }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => {
-                    const d = new Date(Number(v));
-                    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-                  }}
-                />
-                <YAxis
-                  tick={{
-                    fill: "var(--color-muted-foreground)",
-                    fontSize: 10,
-                    fontFamily: "var(--font-mono)",
-                  }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={44}
-                  tickFormatter={(v) => formatCompact(Number(v))}
-                />
-                <Tooltip
-                  cursor={{ stroke: "var(--color-border)", strokeWidth: 1 }}
-                  contentStyle={{
-                    background: "var(--color-popover)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 8,
-                    fontSize: 11,
-                    padding: "8px 10px",
-                  }}
-                  labelStyle={{
-                    color: "var(--color-muted-foreground)",
-                    fontFamily: "var(--font-mono)",
-                    marginBottom: 4,
-                  }}
-                  itemStyle={{ fontFamily: "var(--font-mono)" }}
-                  labelFormatter={(v) => new Date(Number(v)).toLocaleString()}
-                  formatter={(val, name) => [
-                    `${formatCompact(Number(val))} ${asset}`,
-                    name as string,
-                  ]}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="total"
-                  name="Depth"
-                  stroke="var(--color-primary)"
-                  fill="url(#totalDepthFill)"
-                  strokeWidth={1.5}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="ma"
-                  name="SMA20"
-                  stroke="var(--color-chart-4)"
-                  strokeWidth={1}
-                  strokeDasharray="3 3"
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+    <ChartCard
+      title="Depth near the price"
+      description={
+        near
+          ? `${asset} within 1% (solid) and 0.5% (dashed) of each side's best price. Buy ads are declared budgets, not escrowed.`
+          : `${asset} in the top 20 ads per side. Near-price depth is recorded from now on and will replace this.`
+      }
+      legend={[
+        { label: near ? "Sell ads (you buy)" : "Sell ads, top 20", color: C.buy },
+        { label: near ? "Buy ads (you sell, declared)" : "Buy ads, top 20", color: C.sell },
+        ...(near ? [{ label: "within 0.5%", color: C.fg, dashed: true }] : []),
+      ]}
+    >
+      {asks.length < 2 ? (
+        <ChartEmpty className="h-56 sm:h-72" />
+      ) : (
+        <ChartFrame
+          config={config}
+          height="md"
+          label={`Sell-ad depth ${near ? "within 1% of the best price" : "in the top 20"} from ${formatInt(asks[0])} to ${formatInt(asks[asks.length - 1])} ${asset}, low ${formatInt(Math.min(...asks))}, high ${formatInt(Math.max(...asks))}.`}
+        >
+          <ComposedChart data={data} margin={MARGIN}>
+            <CartesianGrid {...GRID} />
+            <XAxis
+              dataKey="t"
+              type="number"
+              scale="time"
+              domain={["dataMin", "dataMax"]}
+              tickFormatter={timeTick(data[data.length - 1].t - data[0].t)}
+              {...axisX}
+            />
+            <YAxis tickFormatter={(v: number) => formatCompact(v)} {...axisY} width={44} />
+            <TimeTooltip valueFormatter={(v) => `${formatInt(v)} ${asset}`} />
+            <Line dataKey="ask" name={config.ask.label} type="monotone" stroke={C.buy} strokeWidth={1.75} dot={false} connectNulls={false} {...ANIM} />
+            <Line dataKey="bid" name={config.bid.label} type="monotone" stroke={C.sell} strokeWidth={1.75} dot={false} connectNulls={false} {...ANIM} />
+            {near && (
+              <Line dataKey="ask05" name={config.ask05.label} type="monotone" stroke={C.buy} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls={false} {...ANIM} />
+            )}
+            {near && (
+              <Line dataKey="bid05" name={config.bid05.label} type="monotone" stroke={C.sell} strokeWidth={1} strokeDasharray="4 3" dot={false} connectNulls={false} {...ANIM} />
+            )}
+          </ComposedChart>
+        </ChartFrame>
+      )}
+    </ChartCard>
   );
 }

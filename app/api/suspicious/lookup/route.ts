@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { rateLimit, readQuery, zRequiredText } from "@/lib/guard";
+
+const Query = z.object({ decoded: zRequiredText(2048, "Missing `decoded` query param.") });
 import {
   fetchBinanceAdvertiserPublic,
   resolveBinanceProfile,
 } from "@/lib/qr-resolve";
-import { latestMerchantSnapshotAnyMarket } from "@/lib/db/suspicious";
-
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
+import { knownNameForUser } from "@/lib/db/suspicious";
 
 /**
  * GET /api/suspicious/lookup?decoded=<raw QR string or profile URL>
@@ -23,13 +24,13 @@ export const runtime = "nodejs";
  *      form knows to fall back to manual entry.
  */
 export async function GET(req: NextRequest) {
-  const decoded = req.nextUrl.searchParams.get("decoded");
-  if (!decoded || !decoded.trim()) {
-    return NextResponse.json(
-      { error: "Missing `decoded` query param." },
-      { status: 400 },
-    );
-  }
+  // Resolving a QR can follow redirects or start a headless browser, so it
+  // shares the strict write bucket.
+  const limited = await rateLimit(req, "write", "qr");
+  if (limited) return limited;
+  const q = readQuery(req, Query);
+  if (!q.ok) return q.res;
+  const { decoded } = q.data;
 
   const ref = await resolveBinanceProfile(decoded);
   if (!ref) {
@@ -42,14 +43,12 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const snap = await latestMerchantSnapshotAnyMarket(ref.userId).catch(
-    () => null,
-  );
-  if (snap?.merchantName) {
+  const known = await knownNameForUser("binance", ref.userId).catch(() => null);
+  if (known) {
     return NextResponse.json({
       profile: ref,
-      displayName: snap.merchantName,
-      lastSeenTs: snap.ts,
+      displayName: known,
+      lastSeenTs: null,
       source: "snapshot" as const,
     });
   }

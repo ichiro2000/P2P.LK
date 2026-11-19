@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink } from "lucide-react";
+import { getExchange, type ExchangeId } from "@/lib/exchanges";
 import {
   Table,
   TableBody,
@@ -10,402 +12,459 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  ExternalLink,
-} from "lucide-react";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { MerchantStar } from "@/components/workspace/star-button";
 import { TierBadge } from "@/components/merchant/tier-badge";
+import { ShowcaseBadge } from "@/components/merchant/showcase-badge";
 import { deriveMerchantTier } from "@/lib/merchant-tier";
 import type { MerchantRow } from "@/lib/analytics";
-import {
-  formatCompact,
-  formatDuration,
-  formatFiat,
-  formatPct,
-  formatRelative,
-} from "@/lib/format";
+import type { ShowcaseMap } from "@/lib/market-insights";
+import { ASSET, FIAT } from "@/lib/constants";
+import { formatCompact, formatPct, formatRelative, formatCount } from "@/lib/format";
+import { ReliabilityInfo } from "@/components/merchant/reliability-info";
 import { cn } from "@/lib/utils";
+import { InfoPopover } from "@/components/common/info-popover";
+import { OwnSpreadText, SpreadMedianText } from "@/components/merchant/own-spread";
+import { ownSpread, type SpreadMedian } from "@/lib/competitors";
 
 type SortKey =
   | "trustScore"
   | "orders30d"
   | "completionRate"
   | "totalAvailableFiat"
-  | "premiumVsMedian"
+  | "askVsBest"
+  | "bidVsBest"
+  | "ownSpread"
   | "avgReleaseSec"
+  | "positiveRate"
+  | "registerDays"
   | "lastSeenTs";
 
-/** Build the Binance public advertiser URL from a userNo. */
-function binanceAdvertiserUrl(id: string): string {
-  return `https://c2c.binance.com/en/advertiserDetail?advertiserNo=${encodeURIComponent(id)}`;
-}
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: "trustScore", label: "Reliability" },
+  { key: "orders30d", label: "30d orders" },
+  { key: "completionRate", label: "Completion" },
+  { key: "totalAvailableFiat", label: "Depth" },
+  { key: "askVsBest", label: "Ask vs best" },
+  { key: "bidVsBest", label: "Bid vs best" },
+  { key: "ownSpread", label: "Own spread" },
+  { key: "avgReleaseSec", label: "Release" },
+  { key: "positiveRate", label: "Feedback" },
+  { key: "registerDays", label: "Account age" },
+  { key: "lastSeenTs", label: "Last seen" },
+];
+/** Gaps and release time: smaller is better, so they sort ascending first. */
+const ASC_FIRST: SortKey[] = ["askVsBest", "bidVsBest", "ownSpread", "avgReleaseSec"];
+/** Columns from the Binance profile (hidden below xl to keep the table readable). */
+const PROFILE_COLS: SortKey[] = ["avgReleaseSec", "positiveRate", "registerDays"];
 
-/** Compact the Binance pay-method labels for a narrow badge. */
-function shortPayRail(name: string): string {
-  if (/\(\s*sri lanka\s*\)/i.test(name)) return "LK Bank";
-  if (/^bank transfer/i.test(name)) return "Bank";
-  if (/^trans\s*bank/i.test(name)) return "Trans Bank";
-  return name;
-}
+const PAGE = 50;
+
+/** Directory row plus its own spread in LKR (null unless listing both sides now). */
+type Row = MerchantRow & { ownSpread: number | null };
+const sym = FIAT.symbol;
 
 export function MerchantTable({
   merchants,
-  symbol,
-  asset,
-  fiat,
+  exchange,
+  showcase,
+  spreadMedian,
 }: {
   merchants: MerchantRow[];
-  symbol: string;
-  asset: string;
-  fiat: string;
+  exchange: ExchangeId;
+  showcase: ShowcaseMap;
+  spreadMedian: SpreadMedian | null;
 }) {
+  const adapter = getExchange(exchange);
   const [sortKey, setSortKey] = useState<SortKey>("trustScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [limit, setLimit] = useState(PAGE);
 
   const sorted = useMemo(() => {
-    const list = [...merchants];
+    const list: Row[] = merchants.map((m) => ({
+      ...m,
+      ownSpread: m.isActive ? (ownSpread(m.bestSellPrice, m.bestBuyPrice)?.lkr ?? null) : null,
+    }));
     list.sort((a, b) => {
-      // Keep active merchants above inactive when ranking by trust; that's the
-      // most common case and matches user expectation.
-      if (sortKey === "trustScore" && a.isActive !== b.isActive) {
-        return a.isActive ? -1 : 1;
-      }
-      const av = (a[sortKey] ?? 0) as number;
-      const bv = (b[sortKey] ?? 0) as number;
+      // Active merchants stay above offline ones when ranking by score.
+      if (sortKey === "trustScore" && a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      // Unknown values (no ad on that side, no 30d count) always go last.
+      if (av == null || bv == null) return av == null ? (bv == null ? 0 : 1) : -1;
       return sortDir === "asc" ? av - bv : bv - av;
     });
     return list;
   }, [merchants, sortKey, sortDir]);
+  const visible = sorted.slice(0, limit);
 
   function toggle(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
       setSortKey(key);
-      setSortDir("desc");
+      setSortDir(ASC_FIRST.includes(key) ? "asc" : "desc");
     }
   }
 
+  const profile = (id: string) => adapter.profileUrl(id, ASSET, FIAT.code);
+
   return (
-    <div className="rounded-lg border border-border bg-card/60 overflow-hidden">
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="w-[200px]">Merchant</TableHead>
-              <TableHead className="text-right">
-                <SortH
-                  label="Trust"
-                  active={sortKey === "trustScore"}
-                  dir={sortDir}
-                  onClick={() => toggle("trustScore")}
-                />
-              </TableHead>
-              <TableHead className="text-right">
-                <SortH
-                  label="30d orders"
-                  active={sortKey === "orders30d"}
-                  dir={sortDir}
-                  onClick={() => toggle("orders30d")}
-                />
-              </TableHead>
-              <TableHead className="text-right">
-                <SortH
-                  label="Completion"
-                  active={sortKey === "completionRate"}
-                  dir={sortDir}
-                  onClick={() => toggle("completionRate")}
-                />
-              </TableHead>
-              <TableHead className="text-right">
-                <SortH
-                  label="Depth"
-                  active={sortKey === "totalAvailableFiat"}
-                  dir={sortDir}
-                  onClick={() => toggle("totalAvailableFiat")}
-                />
-              </TableHead>
-              <TableHead className="text-right">
-                <SortH
-                  label="Premium"
-                  active={sortKey === "premiumVsMedian"}
-                  dir={sortDir}
-                  onClick={() => toggle("premiumVsMedian")}
-                />
-              </TableHead>
-              <TableHead className="hidden text-right xl:table-cell">
-                <SortH
-                  label="Release"
-                  active={sortKey === "avgReleaseSec"}
-                  dir={sortDir}
-                  onClick={() => toggle("avgReleaseSec")}
-                />
-              </TableHead>
-              <TableHead className="hidden text-right xl:table-cell">
-                <SortH
-                  label="Last seen"
-                  active={sortKey === "lastSeenTs"}
-                  dir={sortDir}
-                  onClick={() => toggle("lastSeenTs")}
-                />
-              </TableHead>
-              <TableHead className="hidden lg:table-cell">Rails</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sorted.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={9}
-                  className="py-10 text-center text-sm text-muted-foreground"
-                >
-                  No merchants in this market right now.
-                </TableCell>
-              </TableRow>
-            )}
-            {sorted.map((m, i) => (
-              <MerchantRowCmp
-                key={m.id}
-                m={m}
-                rank={i + 1}
-                symbol={symbol}
-                asset={asset}
-                fiat={fiat}
-              />
+    <Card className="gap-0 py-0">
+      {/* Phones: sort picker above the card list. */}
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3 md:hidden">
+        <span className="text-xs text-muted-foreground">Sort by</span>
+        <Select
+          value={sortKey}
+          onValueChange={(v) => {
+            if (!v) return;
+            setSortKey(v as SortKey);
+            setSortDir(ASC_FIRST.includes(v as SortKey) ? "asc" : "desc");
+          }}
+        >
+          <SelectTrigger className="h-10 flex-1 data-[size=default]:h-10" aria-label="Sort merchants">
+            <SelectValue>{(v) => SORTS.find((s) => s.key === v)?.label ?? "Reliability"}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {SORTS.map((s) => (
+              <SelectItem key={s.key} value={s.key}>
+                {s.label}
+              </SelectItem>
             ))}
-          </TableBody>
-        </Table>
+          </SelectContent>
+        </Select>
+        <button
+          type="button"
+          onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+          aria-label={sortDir === "asc" ? "Ascending, switch to descending" : "Descending, switch to ascending"}
+          className="inline-flex size-10 items-center justify-center rounded-lg border border-border text-muted-foreground"
+        >
+          {sortDir === "asc" ? <ArrowUp className="size-4" /> : <ArrowDown className="size-4" />}
+        </button>
+      </div>
+
+      {sorted.length === 0 ? (
+        <p className="px-4 py-10 text-center text-sm text-muted-foreground">No merchants match these filters.</p>
+      ) : (
+        <>
+          <ul className="divide-y divide-border md:hidden">
+            {visible.map((m, i) => (
+              <MerchantCard key={m.id} m={m} rank={i + 1} flag={showcase[m.id]} />
+            ))}
+          </ul>
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="pl-4">Merchant</TableHead>
+                  {SORTS.map((s) => (
+                    <TableHead
+                      key={s.key}
+                      aria-sort={sortKey === s.key ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
+                      className={cn(
+                        "text-right",
+                        s.key === "lastSeenTs" && "hidden xl:table-cell",
+                        (s.key === "askVsBest" || s.key === "bidVsBest" || s.key === "ownSpread") && "hidden lg:table-cell",
+                        PROFILE_COLS.includes(s.key) && "hidden xl:table-cell",
+                      )}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <SortH
+                          label={s.label}
+                          active={sortKey === s.key}
+                          dir={sortDir}
+                          onClick={() => toggle(s.key)}
+                        />
+                        {s.key === "trustScore" && <ReliabilityInfo className="m-0 size-6" />}
+                        {s.key === "ownSpread" && (
+                          <InfoPopover label="What own spread means" title="Own spread" className="m-0 size-6">
+                            <p>
+                              Best Sell-ad price − best Buy-ad price, per USDT, before fees. Shown only for merchants
+                              listing both sides now.
+                            </p>
+                            <p>
+                              <SpreadMedianText median={spreadMedian} />
+                            </p>
+                          </InfoPopover>
+                        )}
+                      </span>
+                    </TableHead>
+                  ))}
+                  <TableHead className="w-10 pr-4" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visible.map((m, i) => (
+                  <TableRow key={m.id} className={cn(!m.isActive && "text-muted-foreground")}>
+                    <TableCell className="max-w-72 py-2.5 pl-4">
+                      <NameBlock m={m} rank={i + 1} flag={showcase[m.id]} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <ScorePill value={m.trustScore} />
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatCount(m.orders30d)}</TableCell>
+                    <TableCell className="text-right">
+                      <Completion v={m.completionRate} />
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {sym} {formatCompact(m.totalAvailableFiat)}
+                    </TableCell>
+                    <TableCell className="hidden text-right lg:table-cell">
+                      <Gap v={m.askVsBest} />
+                    </TableCell>
+                    <TableCell className="hidden text-right lg:table-cell">
+                      <Gap v={m.bidVsBest} />
+                    </TableCell>
+                    <TableCell className="hidden text-right text-xs lg:table-cell">
+                      <Spread m={m} stacked />
+                    </TableCell>
+                    <TableCell className="hidden text-right font-mono tabular-nums xl:table-cell">
+                      <Release sec={m.avgReleaseSec} />
+                    </TableCell>
+                    <TableCell className="hidden text-right xl:table-cell">
+                      <Feedback m={m} />
+                    </TableCell>
+                    <TableCell className="hidden text-right font-mono tabular-nums xl:table-cell">
+                      <Age days={m.registerDays} />
+                    </TableCell>
+                    <TableCell className="hidden text-right text-xs xl:table-cell">
+                      <LastSeen m={m} />
+                    </TableCell>
+                    <TableCell className="pr-4">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <MerchantStar id={m.id} name={m.name} asset={ASSET} fiat={FIAT.code} className="size-8" />
+                        <a
+                          href={profile(m.id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={`Open ${m.name} on ${adapter.label}`}
+                          title={`Open on ${adapter.label}`}
+                          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <ExternalLink className="size-3.5" />
+                        </a>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {sorted.length > limit && (
+            <div className="border-t border-border p-3">
+              <button
+                type="button"
+                onClick={() => setLimit((l) => l + PAGE)}
+                className="h-10 w-full rounded-lg border border-border text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                Show {Math.min(PAGE, sorted.length - limit)} more of {sorted.length - limit}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function MerchantCard({
+  m,
+  rank,
+  flag,
+}: {
+  m: MerchantRow;
+  rank: number;
+  flag: ShowcaseMap[string] | undefined;
+}) {
+  return (
+    <li className={cn("space-y-2.5 px-4 py-3", !m.isActive && "text-muted-foreground")}>
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <NameBlock m={m} rank={rank} flag={flag} />
+        </div>
+        <ScorePill value={m.trustScore} />
+        <MerchantStar id={m.id} name={m.name} asset={ASSET} fiat={FIAT.code} className="-my-2 -mr-2 size-10" />
+      </div>
+      <dl className="grid grid-cols-3 gap-2 text-xs">
+        <Cell label="30d orders" value={formatCount(m.orders30d)} />
+        <Cell label="Completion" value={<Completion v={m.completionRate} />} />
+        <Cell label="Depth" value={`${sym} ${formatCompact(m.totalAvailableFiat)}`} />
+        <Cell label="Ask vs best" value={<Gap v={m.askVsBest} />} />
+        <Cell label="Bid vs best" value={<Gap v={m.bidVsBest} />} />
+        <Cell label="Release" value={<Release sec={m.avgReleaseSec} />} />
+        <Cell label="Feedback" value={<Feedback m={m} />} />
+        <Cell label="Account age" value={<Age days={m.registerDays} />} />
+        <Cell label="Seen" value={<LastSeen m={m} />} />
+        <Cell className="col-span-3" label="Own spread (best Sell − best Buy)" value={<Spread m={m} />} />
+      </dl>
+    </li>
+  );
+}
+
+function Cell({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn("min-w-0", className)}>
+      <dt className="text-[11px] text-muted-foreground">{label}</dt>
+      <dd className="truncate font-mono tabular-nums text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+function NameBlock({
+  m,
+  rank,
+  flag,
+}: {
+  m: MerchantRow;
+  rank: number;
+  flag: ShowcaseMap[string] | undefined;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <span className="w-6 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+        {rank}
+      </span>
+      <span className="relative shrink-0" aria-hidden>
+        <span className="flex size-8 items-center justify-center rounded-full border border-border bg-muted font-mono text-[11px] text-muted-foreground">
+          {(m.name || "?").slice(0, 2).toUpperCase()}
+        </span>
+        <span
+          className={cn(
+            "absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-card",
+            m.isActive ? "bg-[color:var(--color-buy)]" : "bg-muted-foreground/40",
+          )}
+        />
+      </span>
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Link
+            href={`/merchants/${encodeURIComponent(m.id)}`}
+            className="-my-2.5 truncate py-2.5 text-sm font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            {m.name}
+          </Link>
+          <TierBadge
+            tier={deriveMerchantTier({ isMerchant: m.isMerchant, userIdentity: m.userIdentity, vipLevel: m.vipLevel })}
+            size="xs"
+          />
+          {flag && <ShowcaseBadge flag={flag} />}
+        </div>
+        <div className="text-[11px] text-muted-foreground">
+          {m.isActive ? (
+            <>
+              {m.adCount} ad{m.adCount === 1 ? "" : "s"}
+              {m.buyAds > 0 && <span className="text-[color:var(--color-sell)]"> · {m.buyAds} buy</span>}
+              {m.sellAds > 0 && <span className="text-[color:var(--color-buy)]"> · {m.sellAds} sell</span>}
+            </>
+          ) : (
+            "Offline"
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function MerchantRowCmp({
-  m,
-  rank,
-  symbol,
-  asset,
-  fiat,
-}: {
-  m: MerchantRow;
-  rank: number;
-  symbol: string;
-  asset: string;
-  fiat: string;
-}) {
+/** Own spread while listing; "—" when offline. */
+function Spread({ m, stacked = false }: { m: MerchantRow; stacked?: boolean }) {
+  if (!m.isActive) return <span className="text-muted-foreground">—</span>;
+  return <OwnSpreadText ask={m.bestSellPrice} bid={m.bestBuyPrice} stacked={stacked} />;
+}
+
+function LastSeen({ m }: { m: MerchantRow }) {
+  return m.isActive ? (
+    <span className="text-[color:var(--color-buy)]">now</span>
+  ) : (
+    <span className="font-mono tabular-nums" suppressHydrationWarning>
+      {formatRelative(new Date(m.lastSeenTs * 1000))}
+    </span>
+  );
+}
+
+/** 30-day average release time (Binance profile). */
+function Release({ sec }: { sec: number | null | undefined }) {
+  if (sec == null || !(sec > 0)) return <span className="text-muted-foreground">—</span>;
   return (
-    <TableRow
+    <span className={cn(sec > 900 && "text-[color:var(--color-warn)]")}>
+      {sec < 60 ? `${Math.round(sec)}s` : `${(sec / 60).toFixed(1)}m`}
+    </span>
+  );
+}
+
+/** Positive feedback share, with the review count in the title. */
+function Feedback({ m }: { m: MerchantRow }) {
+  if (m.positiveRate == null) return <span className="text-muted-foreground">—</span>;
+  const few = (m.feedbackCount ?? 0) < 20;
+  return (
+    <span
+      title={`${m.feedbackCount ?? 0} reviews`}
       className={cn(
-        "border-border transition-colors hover:bg-accent/40",
-        !m.isActive && "opacity-70",
+        "font-mono tabular-nums",
+        few ? "text-muted-foreground" : m.positiveRate >= 0.98 ? "text-foreground" : "text-[color:var(--color-warn)]",
       )}
     >
-      <TableCell className="py-3">
-        <div className="flex max-w-[240px] items-center gap-2 min-w-0">
-          <span className="font-mono text-[10px] tabular-nums text-muted-foreground w-5 text-right shrink-0">
-            #{rank}
-          </span>
-          <div className="relative shrink-0">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-muted/50 font-mono text-[11px] font-medium text-muted-foreground">
-              {(m.name || "?").slice(0, 2).toUpperCase()}
-            </div>
-            <span
-              aria-hidden
-              className={cn(
-                "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-card",
-                m.isActive
-                  ? "bg-[color:var(--color-buy)]"
-                  : "bg-muted-foreground/40",
-              )}
-            />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <Link
-                href={`/merchants/${encodeURIComponent(m.id)}`}
-                className="min-w-0 truncate text-sm font-medium text-foreground hover:text-primary"
-                title={`Open ${m.name} detail`}
-              >
-                <span className="truncate">{m.name}</span>
-              </Link>
-              <a
-                href={binanceAdvertiserUrl(m.id)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:text-primary"
-                aria-label={`Open ${m.name} on Binance`}
-                title={`Open ${m.name} on Binance`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ExternalLink className="h-3 w-3" strokeWidth={2} />
-              </a>
-              <TierBadge
-                tier={deriveMerchantTier({
-                  isMerchant: m.isMerchant,
-                  userIdentity: m.userIdentity,
-                  vipLevel: m.vipLevel,
-                })}
-                size="xs"
-              />
-              {!m.isActive && (
-                <Badge
-                  variant="outline"
-                  className="h-4 border-dashed px-1 text-[9px] font-medium uppercase tracking-wide text-muted-foreground"
-                >
-                  offline
-                </Badge>
-              )}
-              <MerchantStar
-                id={m.id}
-                name={m.name}
-                asset={asset}
-                fiat={fiat}
-                className="-mr-1"
-              />
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span className="font-mono tabular-nums">
-                {m.adCount} ad{m.adCount === 1 ? "" : "s"}
-              </span>
-              {(m.buyAds > 0 || m.sellAds > 0) && (
-                <>
-                  <span>·</span>
-                  <span>
-                    {/* BUY-type ads (merchant bidding) = retail sell context → red.
-                        SELL-type ads (merchant offering) = retail buy context → green. */}
-                    {m.buyAds > 0 && (
-                      <span className="text-[color:var(--color-sell)]">
-                        {m.buyAds}B
-                      </span>
-                    )}
-                    {m.buyAds > 0 && m.sellAds > 0 && (
-                      <span className="text-muted-foreground/40"> / </span>
-                    )}
-                    {m.sellAds > 0 && (
-                      <span className="text-[color:var(--color-buy)]">
-                        {m.sellAds}S
-                      </span>
-                    )}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </TableCell>
+      {formatPct(m.positiveRate, { frac: 1 })}
+    </span>
+  );
+}
 
-      <TableCell className="py-3 text-right">
-        <ScorePill value={m.trustScore} />
-      </TableCell>
+/** Account age from the exchange's register date. */
+function Age({ days }: { days: number | null | undefined }) {
+  if (days == null) return <span className="text-muted-foreground">—</span>;
+  return <span>{days >= 365 ? `${(days / 365).toFixed(1)}y` : `${days}d`}</span>;
+}
 
-      <TableCell className="py-3 text-right font-mono text-sm tabular-nums text-foreground">
-        {formatCompact(m.orders30d)}
-      </TableCell>
+function Completion({ v }: { v: number }) {
+  return (
+    <span
+      className={cn(
+        "font-mono tabular-nums",
+        v >= 0.97 ? "text-foreground" : v >= 0.9 ? "text-[color:var(--color-warn)]" : "text-[color:var(--color-sell)]",
+      )}
+    >
+      {formatPct(v, { frac: 1 })}
+    </span>
+  );
+}
 
-      <TableCell className="py-3 text-right">
-        <span
-          className={cn(
-            "font-mono text-sm tabular-nums",
-            m.completionRate >= 0.97
-              ? "text-[color:var(--color-buy)]"
-              : m.completionRate >= 0.9
-                ? "text-foreground"
-                : "text-[color:var(--color-sell)]",
-          )}
-        >
-          {formatPct(m.completionRate, { frac: 1 })}
-        </span>
-      </TableCell>
-
-      <TableCell className="py-3 text-right font-mono text-sm tabular-nums text-muted-foreground">
-        {formatFiat(m.totalAvailableFiat, symbol, 0)}
-      </TableCell>
-
-      <TableCell className="py-3 text-right">
-        {m.premiumVsMedian == null ? (
-          <span className="text-muted-foreground text-xs">—</span>
-        ) : (
-          <span
-            className={cn(
-              "font-mono text-[12px] tabular-nums",
-              Math.abs(m.premiumVsMedian) < 0.001
-                ? "text-muted-foreground"
-                : m.premiumVsMedian > 0
-                  ? "text-[color:var(--color-warn)]"
-                  : "text-[color:var(--color-buy)]",
-            )}
-          >
-            {formatPct(m.premiumVsMedian, { frac: 2, sign: true })}
-          </span>
-        )}
-      </TableCell>
-
-      <TableCell className="hidden py-3 text-right font-mono text-[12px] tabular-nums text-muted-foreground xl:table-cell">
-        {formatDuration(m.avgReleaseSec)}
-      </TableCell>
-
-      <TableCell className="hidden py-3 text-right text-[12px] text-muted-foreground xl:table-cell">
-        {m.isActive ? (
-          <span className="font-mono text-[color:var(--color-buy)]">now</span>
-        ) : (
-          <span className="font-mono tabular-nums">
-            {formatRelative(new Date(m.lastSeenTs * 1000))}
-          </span>
-        )}
-      </TableCell>
-
-      <TableCell className="hidden py-3 lg:table-cell">
-        <div className="flex flex-wrap gap-1">
-          {m.payMethods.slice(0, 2).map((pm) => (
-            <Badge
-              key={pm}
-              variant="secondary"
-              className="bg-secondary/70 text-[10px] text-foreground/80"
-              title={pm}
-            >
-              {shortPayRail(pm)}
-            </Badge>
-          ))}
-          {m.payMethods.length > 2 && (
-            <Badge
-              variant="outline"
-              className="text-[10px] border-dashed text-muted-foreground"
-              title={m.payMethods.slice(2).join(", ")}
-            >
-              +{m.payMethods.length - 2}
-            </Badge>
-          )}
-          {m.payMethods.length === 0 && (
-            <span className="text-[10px] text-muted-foreground/60">—</span>
-          )}
-        </div>
-        <span className="sr-only">{asset}</span>
-      </TableCell>
-    </TableRow>
+/** Gap to the side's best price among active merchants: 0 = best. */
+function Gap({ v }: { v: number | null }) {
+  if (v == null) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span
+      className={cn(
+        "font-mono tabular-nums",
+        v < 0.00005 ? "text-foreground" : v > 0.01 ? "text-muted-foreground" : "text-foreground",
+      )}
+    >
+      {v < 0.00005 ? "best" : `+${formatPct(v, { frac: 2 })}`}
+    </span>
   );
 }
 
 function ScorePill({ value }: { value: number }) {
-  const clamped = Math.max(0, Math.min(100, value));
-  const tone =
-    clamped >= 80
-      ? "text-[color:var(--color-buy)] bg-[color:var(--color-buy-muted)]"
-      : clamped >= 60
-        ? "text-foreground bg-muted"
-        : "text-[color:var(--color-sell)] bg-[color:var(--color-sell-muted)]";
-
+  const v = Math.max(0, Math.min(100, Math.round(value)));
   return (
     <span
+      title="Reliability score, 0–100"
       className={cn(
-        "inline-flex items-center justify-center rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums",
-        tone,
+        "inline-flex h-6 min-w-9 shrink-0 items-center justify-center rounded-full px-2 font-mono text-xs font-semibold tabular-nums",
+        v >= 80
+          ? "bg-[color:var(--color-buy)]/12 text-[color:var(--color-buy)]"
+          : v >= 60
+            ? "bg-muted text-foreground"
+            : "bg-[color:var(--color-sell)]/12 text-[color:var(--color-sell)]",
       )}
     >
-      {Math.round(clamped)}
+      {v}
     </span>
   );
 }
@@ -424,16 +483,15 @@ function SortH({
   const Icon = !active ? ArrowUpDown : dir === "asc" ? ArrowUp : ArrowDown;
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wider transition-colors",
-        active
-          ? "text-foreground"
-          : "text-muted-foreground hover:text-foreground",
+        "inline-flex h-8 items-center gap-1 text-xs font-medium transition-colors",
+        active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
       )}
     >
       {label}
-      <Icon className="h-3 w-3" strokeWidth={2} />
+      <Icon className="size-3" />
     </button>
   );
 }

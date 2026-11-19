@@ -2,21 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { decodeQrFromFile } from "@/lib/qr-decode-client";
-import { formatSLT } from "@/lib/format";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Flag,
-  Upload,
-  Loader2,
-  ExternalLink,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Flag, Loader2 } from "lucide-react";
 import type { SuspiciousReport } from "@/lib/db/suspicious";
 import type { BinanceProfileRef } from "@/lib/qr";
+import { Callout, ReportItem } from "./parts";
+import { FileDrop } from "./file-drop";
 
 type Result =
   | { kind: "idle" }
@@ -30,6 +23,8 @@ type Result =
       decoded: string;
     }
   | { kind: "error"; message: string; decoded?: string };
+
+const TAP = "h-10 sm:h-9";
 
 export function QrChecker() {
   const [result, setResult] = useState<Result>({ kind: "idle" });
@@ -49,26 +44,21 @@ export function QrChecker() {
 
     setResult({ kind: "checking", decoded });
     try {
-      const r = await fetch(
-        `/api/suspicious/check?decoded=${encodeURIComponent(decoded)}`,
-        { cache: "no-store" },
-      );
-      const json = await r.json();
+      const r = await fetch(`/api/suspicious/check?decoded=${encodeURIComponent(decoded)}`, {
+        cache: "no-store",
+      });
+      const json = (await r.json()) as {
+        error?: string;
+        flagged?: boolean;
+        profile: BinanceProfileRef;
+        reports: SuspiciousReport[];
+      };
       if (!r.ok) {
-        setResult({
-          kind: "error",
-          message: json.error ?? `HTTP ${r.status}`,
-          decoded,
-        });
+        setResult({ kind: "error", message: json.error ?? `HTTP ${r.status}`, decoded });
         return;
       }
       if (json.flagged) {
-        setResult({
-          kind: "flagged",
-          profile: json.profile,
-          reports: json.reports,
-          decoded,
-        });
+        setResult({ kind: "flagged", profile: json.profile, reports: json.reports, decoded });
       } else {
         setResult({ kind: "clean", profile: json.profile, decoded });
       }
@@ -80,208 +70,105 @@ export function QrChecker() {
     }
   }
 
-  return (
-    <Card className="border-border bg-card/60">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Check a QR
-        </CardTitle>
-        <p className="text-[11px] text-muted-foreground/70">
-          Upload a Binance Share-Profile QR to see if the taker has been
-          reported by the community.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <FileDrop
-          disabled={result.kind === "decoding" || result.kind === "checking"}
-          onFile={onFile}
-        />
+  const busy = result.kind === "decoding" || result.kind === "checking";
 
-        <ResultView result={result} onReset={() => setResult({ kind: "idle" })} />
+  return (
+    <Card className="gap-4 py-4">
+      <CardContent className="space-y-4 px-4">
+        {result.kind === "idle" || busy ? (
+          <FileDrop disabled={busy} onFile={onFile} />
+        ) : null}
+        <div aria-live="polite">
+          <ResultView result={result} onReset={() => setResult({ kind: "idle" })} />
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function FileDrop({
-  disabled,
-  onFile,
-}: {
-  disabled: boolean;
-  onFile: (f: File) => void;
-}) {
-  const [dragging, setDragging] = useState(false);
-  return (
-    <label
-      className={[
-        "relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-6 text-center transition-colors",
-        dragging
-          ? "border-primary bg-primary/5"
-          : "border-border bg-muted/20 hover:bg-muted/30",
-        disabled && "pointer-events-none opacity-60",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        const f = e.dataTransfer.files?.[0];
-        if (f) onFile(f);
-      }}
-    >
-      <Upload className="h-5 w-5 text-muted-foreground" />
-      <div className="text-sm">
-        <span className="font-medium text-foreground">Click to upload</span>
-        <span className="text-muted-foreground"> or drag a QR image here</span>
-      </div>
-      <div className="text-[10px] text-muted-foreground/70">
-        PNG or JPEG · decoded locally in your browser
-      </div>
-      <input
-        type="file"
-        accept="image/*"
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-        disabled={disabled}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onFile(f);
-          e.currentTarget.value = "";
-        }}
-      />
-    </label>
-  );
-}
-
-function ResultView({
-  result,
-  onReset,
-}: {
-  result: Result;
-  onReset: () => void;
-}) {
+function ResultView({ result, onReset }: { result: Result; onReset: () => void }) {
   if (result.kind === "idle") return null;
 
   if (result.kind === "decoding" || result.kind === "checking") {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        {result.kind === "decoding" ? "Reading QR…" : "Checking registry…"}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        {result.kind === "decoding" ? "Reading QR…" : "Checking the registry…"}
       </div>
     );
   }
 
+  const again = (
+    <Button variant="ghost" className={TAP} onClick={onReset}>
+      Check another
+    </Button>
+  );
+
   if (result.kind === "error") {
     return (
-      <div className="space-y-2 rounded-md border border-[color:var(--color-sell)]/40 bg-[color:var(--color-sell-muted)] px-3 py-2 text-sm">
-        <div className="flex items-start gap-2 text-[color:var(--color-sell)]">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <p className="flex-1">{result.message}</p>
-        </div>
-        {result.decoded && (
-          <div className="border-t border-border/40 pt-1.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Decoded content
+      <div className="space-y-3">
+        <Callout tone="sell" icon={AlertTriangle} title="Couldn't check this QR" role="alert">
+          <p>{result.message}</p>
+          {result.decoded && (
+            <div className="mt-2 border-t border-border pt-2">
+              <div className="text-xs font-medium text-foreground">Decoded content</div>
+              <code className="mt-0.5 block font-mono text-xs break-all">{result.decoded}</code>
             </div>
-            <code className="mt-0.5 block break-all font-mono text-[10px] text-muted-foreground">
-              {result.decoded}
-            </code>
-          </div>
-        )}
-        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={onReset}>
-          Try another
-        </Button>
+          )}
+        </Callout>
+        {again}
       </div>
     );
   }
 
   if (result.kind === "clean") {
     return (
-      <div className="space-y-3 rounded-md border border-[color:var(--color-buy)]/40 bg-[color:var(--color-buy-muted)] px-3 py-3 text-sm">
-        <div className="flex items-center gap-2 text-[color:var(--color-buy)]">
-          <CheckCircle2 className="h-4 w-4" />
-          <span className="font-semibold">Not in our registry</span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          No reports found for this taker. Absence isn&apos;t a guarantee —
-          still do your usual checks, and if you&apos;ve had a bad
-          experience with them, flag them for the next merchant.
-        </p>
+      <div className="space-y-3">
+        <Callout tone="buy" icon={CheckCircle2} title="Not in the registry" role="status">
+          No reports found for this taker. That isn&apos;t a guarantee, so still do your usual checks. If
+          you&apos;ve had a bad experience with them, flag them for the next merchant.
+        </Callout>
         <ProfileLine profile={result.profile} />
-        <div className="flex flex-wrap items-center gap-2 pt-1">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Link
             href={`/suspicious/new?decoded=${encodeURIComponent(result.decoded)}`}
-            className={buttonVariants({ size: "sm", variant: "outline" })}
+            className={buttonVariants({ variant: "outline", className: TAP })}
           >
-            <Flag className="h-3.5 w-3.5" /> Flag this taker
+            <Flag /> Flag this taker
           </Link>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2"
-            onClick={onReset}
-          >
-            Check another
-          </Button>
+          {again}
         </div>
       </div>
     );
   }
 
   // flagged
+  const n = result.reports.length;
   return (
-    <div className="space-y-3 rounded-md border border-[color:var(--color-sell)]/50 bg-[color:var(--color-sell-muted)] px-3 py-3 text-sm">
-      <div className="flex items-center gap-2 text-[color:var(--color-sell)]">
-        <AlertTriangle className="h-4 w-4" />
-        <span className="font-semibold">
-          Flagged — {result.reports.length} report
-          {result.reports.length === 1 ? "" : "s"}
-        </span>
-      </div>
+    <div className="space-y-3">
+      <Callout tone="sell" icon={AlertTriangle} title={`Flagged · ${n} report${n === 1 ? "" : "s"}`} role="alert">
+        Other merchants have reported this taker. Read the reports before you trade.
+      </Callout>
       <ProfileLine profile={result.profile} />
-      <ul className="space-y-2 border-t border-border/60 pt-2">
+      <ul className="divide-y divide-border rounded-lg border px-3.5 py-3">
         {result.reports.map((r) => (
-          <li key={r.id} className="text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="destructive">{r.reason}</Badge>
-              <span className="text-muted-foreground">
-                {formatSLT(r.ts)} SLT
-              </span>
-              {r.reporter && (
-                <span className="text-muted-foreground">· by {r.reporter}</span>
-              )}
-            </div>
-            {r.notes && (
-              <p className="mt-1 text-muted-foreground">{r.notes}</p>
-            )}
-          </li>
+          <ReportItem key={r.id} report={r} />
         ))}
       </ul>
-      <div className="flex flex-wrap items-center gap-2 pt-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <Link
           href={`/suspicious/${encodeURIComponent(result.profile.userId)}`}
-          className={buttonVariants({ size: "sm", variant: "outline" })}
+          className={buttonVariants({ className: TAP })}
         >
           Open details
         </Link>
         <Link
           href={`/suspicious/new?decoded=${encodeURIComponent(result.decoded)}`}
-          className={buttonVariants({ size: "sm", variant: "ghost" })}
+          className={buttonVariants({ variant: "outline", className: TAP })}
         >
-          <Flag className="h-3.5 w-3.5" /> Add another report
+          <Flag /> Add another report
         </Link>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2"
-          onClick={onReset}
-        >
-          Check another
-        </Button>
+        {again}
       </div>
     </div>
   );
@@ -289,15 +176,15 @@ function ResultView({
 
 function ProfileLine({ profile }: { profile: BinanceProfileRef }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-      <span className="font-mono">advertiserNo: {profile.userId}</span>
+    <div className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+      <span className="font-mono break-all">advertiserNo {profile.userId}</span>
       <a
         href={profile.profileUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 underline hover:text-foreground"
+        className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"
       >
-        Open on Binance <ExternalLink className="h-3 w-3" />
+        Open on Binance <ExternalLink className="size-3" />
       </a>
     </div>
   );

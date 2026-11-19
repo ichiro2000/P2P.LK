@@ -1,190 +1,134 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { ChartCard, ChartEmpty } from "@/components/charts/kit";
 import { formatCompact } from "@/lib/format";
-import { Empty } from "@/components/common/empty";
-import { Clock } from "lucide-react";
+import type { DepthHeatCell } from "@/lib/db/queries";
+import { DOW, DOW_LONG, SltHeatGrid, hh, type HeatCell } from "./slt-heat-grid";
 
-type Cell = { dow: number; hour: number; avg: number; count: number };
-
-const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+/** Cells with fewer minutes than this are shown as "not enough data". */
+const MIN_MINUTES = 20;
 
 /**
- * 7×24 heatmap of average depth by day-of-week × hour-of-day. Useful for
- * spotting trading windows, regional liquidity peaks and dead zones.
- *
- * Intensity is computed relative to the max across the whole grid so the
- * scale is meaningful at any absolute magnitude.
+ * Near-touch depth (within 1 % of each side's best price) by weekday × hour,
+ * exact Sri Lanka time, last 14 days of raw snapshots. Sell ads (what a buyer
+ * can take, escrowed) and buy ads (declared budgets) are separate grids:
+ * adding them would let placeholder bids hide an empty ask side.
  */
 export function DepthHeatmap({
   cells,
-  max,
+  maxAsk,
+  maxBid,
   totalPoints,
   asset,
 }: {
-  cells: Cell[];
-  max: number;
+  cells: DepthHeatCell[];
+  maxAsk: number;
+  maxBid: number;
   totalPoints: number;
   asset: string;
 }) {
-  if (totalPoints === 0 || max === 0) {
+  const title = "Liquidity heatmap";
+  const description = `Average ${asset} within 1% of the best price, by weekday and hour (Sri Lanka time), last 14 days.`;
+  const filled = cells.filter((c) => c.count >= MIN_MINUTES && c.ask != null);
+  if (totalPoints === 0 || filled.length === 0) {
     return (
-      <Card className="card-lift border-border bg-card/60">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Depth heatmap · day × hour
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Empty
-            icon={Clock}
-            title="Not enough coverage yet"
-            description="Heatmap fills in as snapshots accumulate across days and hours. Keep the ingest loop running for at least a day or two."
-          />
-        </CardContent>
-      </Card>
+      <ChartCard title={title} description={description}>
+        <ChartEmpty
+          title="Not enough coverage yet"
+          hint="Fills in as near-price depth is recorded across the days of the week."
+        />
+      </ChartCard>
     );
   }
 
-  // Lookup for fast access during render.
-  const lookup = new Map<string, Cell>();
-  for (const c of cells) lookup.set(`${c.dow}:${c.hour}`, c);
-
-  // Hours labeled every 3 columns for legibility.
-  const hourLabels = Array.from({ length: 24 }, (_, h) =>
-    h % 3 === 0 ? String(h).padStart(2, "0") : "",
-  );
-
-  return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Depth heatmap
-            </CardTitle>
-            <p className="mt-0.5 text-[10px] text-muted-foreground/70">
-              Avg. Buy + Sell ads ({asset}) by weekday × hour (SLT) · {totalPoints} ticks
-            </p>
-          </div>
-          <Legend max={max} asset={asset} />
-        </div>
-      </CardHeader>
-
-      <CardContent className="pb-4">
-        <div className="overflow-x-auto">
-          <div className="grid min-w-[520px] grid-cols-[36px_repeat(24,1fr)] gap-[2px]">
-            {/* Header row — hours */}
-            <div />
-            {hourLabels.map((lbl, h) => (
-              <div
-                key={`h-${h}`}
-                className="flex h-5 items-end justify-center pb-0.5 font-mono text-[9px] text-muted-foreground/70"
-              >
-                {lbl}
-              </div>
-            ))}
-
-            {DOW.map((d, dow) => (
-              <DowRow
-                key={d}
-                label={d}
-                dow={dow}
-                lookup={lookup}
-                max={max}
-                asset={asset}
-              />
-            ))}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function DowRow({
-  label,
-  dow,
-  lookup,
-  max,
-  asset,
-}: {
-  label: string;
-  dow: number;
-  lookup: Map<string, Cell>;
-  max: number;
-  asset: string;
-}) {
-  const cells = Array.from({ length: 24 }, (_, h) => lookup.get(`${dow}:${h}`));
-  return (
-    <>
-      <div className="flex h-5 items-center justify-end pr-2 font-mono text-[10px] text-muted-foreground">
-        {label}
-      </div>
-      {cells.map((c, h) => (
-        <HeatCell
-          key={`${dow}-${h}`}
-          cell={c}
-          hour={h}
-          dow={dow}
-          max={max}
-          asset={asset}
-          label={label}
-        />
-      ))}
-    </>
-  );
-}
-
-function HeatCell({
-  cell,
-  hour,
-  dow,
-  max,
-  asset,
-  label,
-}: {
-  cell: Cell | undefined;
-  hour: number;
-  dow: number;
-  max: number;
-  asset: string;
-  label: string;
-}) {
-  const intensity = cell && cell.count > 0 ? cell.avg / max : 0;
-
-  const empty = !cell || cell.count === 0;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _ = dow;
+  const grid = (side: "ask" | "bid"): HeatCell[][] => {
+    const max = side === "ask" ? maxAsk : maxBid;
+    return Array.from({ length: 7 }, (_, d) =>
+      Array.from({ length: 24 }, (_, h) => {
+        const c = cells.find((x) => x.dow === d && x.hour === h);
+        const v = c?.[side];
+        const label = `${DOW[d]} ${hh(h)}`;
+        if (!c || v == null || c.count < MIN_MINUTES)
+          return { level: null, tone: "fg", title: `${label} · not enough data (${c?.count ?? 0} min)` };
+        return {
+          level: max > 0 ? v / max : 0,
+          tone: side === "ask" ? "buy" : "sell",
+          title: `${label} · ${formatCompact(v)} ${asset} · ${c.count} min over ${c.days} day${c.days === 1 ? "" : "s"}`,
+        };
+      }),
+    );
+  };
+  const best = filled.reduce((a, b) => ((b.ask ?? 0) > (a.ask ?? 0) ? b : a), filled[0]);
+  const worst = filled.reduce((a, b) => ((b.ask ?? 0) < (a.ask ?? 0) ? b : a), filled[0]);
+  const coverage = filled.length / 168;
 
   return (
-    <div
-      className={cn(
-        "group relative h-5 w-full rounded-sm transition-colors",
-        empty ? "bg-muted/30" : "bg-primary",
-      )}
-      style={empty ? undefined : { opacity: 0.12 + intensity * 0.88 }}
-      title={
-        empty
-          ? `${label} ${String(hour).padStart(2, "0")}:00 — no data`
-          : `${label} ${String(hour).padStart(2, "0")}:00\n${formatCompact(cell?.avg ?? 0)} ${asset} avg\n${cell?.count ?? 0} tick${cell?.count === 1 ? "" : "s"}`
+    <ChartCard
+      title={title}
+      description={description}
+      footer={
+        <>
+          Most sell-ad depth:{" "}
+          <span className="text-foreground">
+            {DOW[best.dow]} {hh(best.hour)}
+          </span>{" "}
+          ({formatCompact(best.ask)} {asset}) · least:{" "}
+          <span className="text-foreground">
+            {DOW[worst.dow]} {hh(worst.hour)}
+          </span>{" "}
+          ({formatCompact(worst.ask)} {asset}) · {Math.round(coverage * 100)}% of hours covered ·{" "}
+          {formatCompact(totalPoints)} minutes · grey = under {MIN_MINUTES} minutes of data
+        </>
       }
-    />
-  );
-}
+    >
+      <div className="space-y-4">
+        <section className="space-y-1.5">
+          <h3 className="flex flex-wrap items-baseline justify-between gap-2 text-xs font-medium">
+            <span>Sell ads within 1% · USDT you can buy</span>
+            <span className="font-mono text-[11px] font-normal text-muted-foreground">max {formatCompact(maxAsk)}</span>
+          </h3>
+          <SltHeatGrid
+            rows={grid("ask")}
+            labels={DOW}
+            ariaLabel="Sell-ad depth within 1% of the best price, by weekday and hour, Sri Lanka time. Scrolls sideways."
+          />
+        </section>
+        <section className="space-y-1.5">
+          <h3 className="flex flex-wrap items-baseline justify-between gap-2 text-xs font-medium">
+            <span>Buy ads within 1% · USDT you can sell (declared)</span>
+            <span className="font-mono text-[11px] font-normal text-muted-foreground">max {formatCompact(maxBid)}</span>
+          </h3>
+          <SltHeatGrid
+            rows={grid("bid")}
+            labels={DOW}
+            ariaLabel="Buy-ad depth within 1% of the best price, declared, by weekday and hour, Sri Lanka time. Scrolls sideways."
+          />
+        </section>
+      </div>
 
-function Legend({ max, asset }: { max: number; asset: string }) {
-  return (
-    <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
-      <span className="font-mono">0</span>
-      <div
-        className="h-1.5 w-28 rounded-full"
-        style={{
-          backgroundImage: `linear-gradient(to right, color-mix(in oklab, var(--color-primary) 14%, transparent), var(--color-primary))`,
-        }}
-      />
-      <span className="font-mono">
-        {formatCompact(max)} {asset}
-      </span>
-    </div>
+      <div className="sr-only">
+        <table>
+          <caption>{description}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Day</th>
+              <th scope="col">Hour (SLT)</th>
+              <th scope="col">Sell ads within 1% ({asset})</th>
+              <th scope="col">Buy ads within 1% ({asset}, declared)</th>
+              <th scope="col">Minutes of data</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filled.map((c) => (
+              <tr key={`${c.dow}-${c.hour}`}>
+                <td>{DOW_LONG[c.dow]}</td>
+                <td>{hh(c.hour)}</td>
+                <td>{Math.round(c.ask ?? 0)}</td>
+                <td>{Math.round(c.bid ?? 0)}</td>
+                <td>{c.count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </ChartCard>
   );
 }

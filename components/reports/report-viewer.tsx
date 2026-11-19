@@ -1,40 +1,30 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import {
-  formatCompact,
-  formatDuration,
-  formatInt,
-  formatPct,
-  formatPrice,
-  formatSLT,
-} from "@/lib/format";
-import type { ReportDocument, ReportTable } from "@/lib/reports";
-import {
-  copyToClipboard,
-  documentToCsv,
-  downloadCsv,
-  tableToCsv,
-} from "@/lib/csv";
-import { cn } from "@/lib/utils";
 import { Clipboard, Download, FileDown } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { KpiGrid } from "@/components/common/page";
+import { KpiCard } from "@/components/common/kpi-card";
+import { formatCompact, formatDuration, formatInt, formatPct, formatPrice, formatSLT } from "@/lib/format";
+import type { ReportColumn, ReportDocument, ReportTable } from "@/lib/reports";
+import { copyToClipboard, documentToCsv, downloadCsv, tableToCsv } from "@/lib/csv";
+import { cn } from "@/lib/utils";
 
-export function ReportViewer({ doc }: { doc: ReportDocument }) {
-  const fileBase = useMemo(
-    () => doc.kind + "_" + new Date().toISOString().replace(/[:.]/g, "-"),
-    [doc.kind],
-  );
+/** Rows shown before "Show all" on long tables. */
+const PAGE = 20;
+
+export function ReportViewer({
+  doc,
+  sparks,
+}: {
+  doc: ReportDocument;
+  /** Optional sparkline per meta label (e.g. "Latest mid"). */
+  sparks?: Record<string, number[]>;
+}) {
+  const fileBase = useMemo(() => doc.kind + "_" + new Date().toISOString().replace(/[:.]/g, "-"), [doc.kind]);
 
   function downloadAll() {
     const csv = documentToCsv(doc.title, doc.tables, doc.meta);
@@ -45,74 +35,43 @@ export function ReportViewer({ doc }: { doc: ReportDocument }) {
   async function copyAll() {
     const csv = documentToCsv(doc.title, doc.tables, doc.meta);
     const ok = await copyToClipboard(csv);
-    toast(ok ? "Copied to clipboard" : "Copy failed", {
-      duration: 1800,
-    });
+    toast(ok ? "Copied to clipboard" : "Copy failed", { duration: 1800 });
   }
 
   return (
-    <div className="space-y-5">
-      <Card className="border-border bg-card/60">
-        <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
-                Report
-              </span>
-              <Badge
-                variant="outline"
-                className="border-dashed bg-transparent text-[9px] uppercase tracking-wider text-muted-foreground"
-              >
-                {doc.kind}
-              </Badge>
-            </div>
-            <h3 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
-              {doc.title}
-            </h3>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">
-              {doc.subtitle}
-            </p>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={copyAll}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card/50 px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-            >
-              <Clipboard className="h-3.5 w-3.5" strokeWidth={1.75} />
-              Copy
-            </button>
-            <button
-              type="button"
-              onClick={downloadAll}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-primary/85"
-            >
-              <FileDown className="h-3.5 w-3.5" strokeWidth={2} />
-              Download CSV
-            </button>
-          </div>
-        </CardHeader>
-
-        <CardContent className="border-t border-border/60 pt-4">
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3 xl:grid-cols-6">
-            {doc.meta.map((m) => (
-              <div key={m.label} className="flex flex-col gap-0.5">
-                <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {m.label}
-                </dt>
-                <dd className="font-mono text-sm tabular-nums text-foreground">
-                  {m.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-
-          <div className="mt-3 font-mono text-[10px] tabular-nums text-muted-foreground/70">
-            Generated {formatSLT(doc.generatedAt)} SLT
-          </div>
-        </CardContent>
+    <div className="space-y-6">
+      <Card className="gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <h3 className="text-base font-semibold tracking-tight break-words">{doc.title}</h3>
+          <p className="text-xs text-muted-foreground">
+            {doc.subtitle}
+            <span aria-hidden> · </span>
+            <span className="font-mono tabular-nums">Generated {formatSLT(doc.generatedAt)} SLT</span>
+          </p>
+        </div>
+        <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">
+          <Button variant="outline" className="h-10 sm:h-8" onClick={copyAll}>
+            <Clipboard /> Copy CSV
+          </Button>
+          <Button className="h-10 sm:h-8" onClick={downloadAll}>
+            <FileDown /> Download CSV
+          </Button>
+        </div>
       </Card>
+
+      {doc.meta.length > 0 && (
+        <KpiGrid className={doc.meta.length > 4 ? "lg:grid-cols-3 xl:grid-cols-6" : undefined}>
+          {doc.meta.map((m) => (
+            <KpiCard
+              key={m.label}
+              label={m.label}
+              value={m.value.length > 10 ? <span className="text-base sm:text-lg">{m.value}</span> : m.value}
+              spark={sparks?.[m.label]}
+              sparkTone="neutral"
+            />
+          ))}
+        </KpiGrid>
+      )}
 
       {doc.tables.map((t) => (
         <TableBlock key={t.id} table={t} fileBase={fileBase} />
@@ -121,101 +80,136 @@ export function ReportViewer({ doc }: { doc: ReportDocument }) {
   );
 }
 
-function TableBlock({
-  table,
-  fileBase,
-}: {
-  table: ReportTable;
-  fileBase: string;
-}) {
+function TableBlock({ table, fileBase }: { table: ReportTable; fileBase: string }) {
+  const [all, setAll] = useState(false);
+  const rows = all ? table.rows : table.rows.slice(0, PAGE);
+  const hidden = table.rows.length - rows.length;
+
   function downloadOne() {
     downloadCsv(`${fileBase}_${table.id}.csv`, tableToCsv(table));
     toast.success(`${table.title} downloaded`);
   }
 
+  // Phone cards: the first name-like column is the card title; "#" and
+  // "level" become a prefix and a tag; the rest is a two-column list.
+  const titleCol = table.columns.find((c) => c.key === "name" || c.key === "title") ?? table.columns[0];
+  const rankCol = table.columns.find((c) => c.key === "rank");
+  const levelCol = table.columns.find((c) => c.key === "level");
+  const restCols = table.columns.filter((c) => c !== titleCol && c !== rankCol && c !== levelCol);
+
   return (
-    <Card className="card-lift border-border bg-card/60">
-      <CardHeader className="flex flex-row items-start justify-between pb-2">
-        <div>
-          <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            {table.title}
-          </CardTitle>
-          {table.subtitle && (
-            <p className="mt-0.5 text-[11px] text-muted-foreground/70">
-              {table.subtitle}
-            </p>
-          )}
+    <Card className="gap-3 py-4">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 px-4">
+        <div className="min-w-0 space-y-1">
+          <CardTitle className="text-sm font-medium">{table.title}</CardTitle>
+          {table.subtitle && <CardDescription className="text-xs">{table.subtitle}</CardDescription>}
         </div>
-        <button
-          type="button"
-          onClick={downloadOne}
-          className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-card/50 px-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-        >
-          <Download className="h-3 w-3" strokeWidth={2} />
-          CSV
-        </button>
+        <Button variant="outline" size="sm" className="h-10 shrink-0 sm:h-7" onClick={downloadOne}>
+          <Download /> CSV
+        </Button>
       </CardHeader>
 
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border hover:bg-transparent">
-                {table.columns.map((c) => (
-                  <TableHead
-                    key={c.key}
-                    className={cn(
-                      c.align === "right" && "text-right",
-                      "whitespace-nowrap",
+      <CardContent className="px-0">
+        {table.rows.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-muted-foreground">No rows for this report.</p>
+        ) : (
+          <>
+            {/* Phones: stacked cards */}
+            <ul className="divide-y border-t md:hidden">
+              {rows.map((row, i) => (
+                <li key={i} className="space-y-2 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 text-sm font-medium break-words">
+                      {rankCol && (
+                        <span className="mr-1.5 font-mono text-xs tabular-nums text-muted-foreground">
+                          #{formatCell(row[rankCol.key], rankCol.format)}
+                        </span>
+                      )}
+                      {formatCell(row[titleCol.key], titleCol.format)}
+                    </div>
+                    {levelCol && (
+                      <span className={cn("shrink-0 font-mono text-xs font-medium", levelTone(String(row[levelCol.key] ?? "")))}>
+                        {formatCell(row[levelCol.key], levelCol.format)}
+                      </span>
                     )}
-                  >
-                    {c.header}
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {table.rows.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={table.columns.length}
-                    className="py-10 text-center text-sm text-muted-foreground"
-                  >
-                    No rows for this report
-                  </TableCell>
-                </TableRow>
-              ) : (
-                table.rows.map((row, i) => (
-                  <TableRow key={i} className="border-border hover:bg-accent/40">
+                  </div>
+                  {restCols.length > 0 && (
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                      {restCols.map((c) => {
+                        const v = row[c.key];
+                        const wide = typeof v === "string" && v.length > 24;
+                        return (
+                          <div key={c.key} className={cn("min-w-0", wide && "col-span-2")}>
+                            <dt className="text-muted-foreground">{c.header}</dt>
+                            <dd className={cn("break-words text-foreground", !wide && "font-mono tabular-nums")}>
+                              {formatCell(v, c.format)}
+                            </dd>
+                          </div>
+                        );
+                      })}
+                    </dl>
+                  )}
+                </li>
+              ))}
+            </ul>
+
+            {/* md and up: table */}
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
                     {table.columns.map((c) => (
-                      <TableCell
+                      <TableHead
                         key={c.key}
-                        className={cn(
-                          c.align === "right" && "text-right",
-                          "font-mono tabular-nums text-[12px]",
-                          c.key === "level"
-                            ? levelTone(String(row[c.key] ?? ""))
-                            : "text-foreground/85",
-                        )}
+                        className={cn("px-4 text-xs whitespace-nowrap", c.align === "right" && "text-right")}
                       >
-                        {formatCell(row[c.key], c.format)}
-                      </TableCell>
+                        {c.header}
+                      </TableHead>
                     ))}
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row, i) => (
+                    <TableRow key={i}>
+                      {table.columns.map((c) => (
+                        <TableCell
+                          key={c.key}
+                          className={cn(
+                            "px-4 text-xs",
+                            c.align === "right" && "text-right",
+                            isNumeric(c) && "font-mono tabular-nums",
+                            c.key === "level" ? cn("font-mono font-medium", levelTone(String(row[c.key] ?? ""))) : "text-foreground",
+                            c.key === "detail" && "max-w-md whitespace-normal text-muted-foreground",
+                          )}
+                        >
+                          {formatCell(row[c.key], c.format)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {hidden > 0 && (
+              <div className="border-t px-4 pt-3">
+                <Button variant="ghost" className="h-10 w-full sm:h-8 sm:w-auto" onClick={() => setAll(true)}>
+                  Show all {table.rows.length} rows
+                </Button>
+              </div>
+            )}
+          </>
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function formatCell(
-  value: string | number | null | undefined,
-  format?: string,
-): React.ReactNode {
+function isNumeric(c: ReportColumn) {
+  return c.align === "right" || (c.format != null && c.format !== "datetime");
+}
+
+function formatCell(value: string | number | null | undefined, format?: string): React.ReactNode {
   if (value == null || value === "") return "—";
   if (typeof value === "string") return value;
   switch (format) {
