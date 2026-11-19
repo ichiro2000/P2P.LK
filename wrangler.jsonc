@@ -28,7 +28,12 @@
   // Feature flags in /admin/system can pause FX collection and alert emails.
   "triggers": { "crons": ["* * * * *"] },
 
-  // p2p.lk and www.p2p.lk served by this worker (zone in this account).
+  // Only the real domain: no *.workers.dev address or preview URLs (no
+  // duplicate copies of the site for search engines to find).
+  "workers_dev": false,
+  "preview_urls": false,
+
+  // p2p.lk and www.p2p.lk (worker.ts redirects www to the apex).
   "routes": [
     { "pattern": "p2p.lk", "custom_domain": true },
     { "pattern": "www.p2p.lk", "custom_domain": true }

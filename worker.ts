@@ -8,8 +8,18 @@
 import { default as handler } from "./.open-next/worker.js";
 import { runScheduled } from "./lib/ingest/run";
 
+/** One canonical host: www.p2p.lk → p2p.lk (301, path and query kept). */
+const CANONICAL_HOST = "p2p.lk";
+
 export default {
-  fetch: handler.fetch,
+  fetch(request: Request, env: CloudflareEnv, ctx: ExecutionContext) {
+    const url = new URL(request.url);
+    if (url.hostname === `www.${CANONICAL_HOST}`) {
+      url.hostname = CANONICAL_HOST;
+      return Response.redirect(url.toString(), 301);
+    }
+    return handler.fetch(request, env, ctx);
+  },
   async scheduled(controller: ScheduledController, env: CloudflareEnv, ctx: ExecutionContext) {
     ctx.waitUntil(runScheduled(env, controller.scheduledTime));
   },
