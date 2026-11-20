@@ -8,7 +8,7 @@ const MAX_IDS = 90;
 
 /**
  * Per-merchant min/max of listed amount and 30d orders over the recent
- * window of 5-minute sweeps — the input for showcase-ad detection.
+ * window of 10-minute sweeps — the input for showcase-ad detection.
  * Pass `merchantIds` to read only those merchants (uses the per-merchant
  * index, so it's cheap enough for every Live Markets render).
  */

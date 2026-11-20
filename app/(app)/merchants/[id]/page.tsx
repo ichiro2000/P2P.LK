@@ -33,7 +33,7 @@ import { classifyShowcase } from "@/lib/market-insights";
 import { getActiveExchange } from "@/lib/exchange-server";
 import { gateRange } from "@/lib/member-gate";
 import { DEFAULT_EXCHANGE, getExchange } from "@/lib/exchanges";
-import { ASSET, FIAT, SLT_OFFSET_SEC } from "@/lib/constants";
+import { ASSET, FIAT, SLT_OFFSET_SEC, SWEEP_SEC } from "@/lib/constants";
 import { formatFiat, formatPct, formatCount } from "@/lib/format";
 import { ACTIVE_SLACK_SEC, sideGaps } from "@/lib/analytics";
 import { reliabilityScore } from "@/lib/merchant-score";
@@ -166,12 +166,20 @@ export default async function MerchantDetailPage({
   }
 
   /* ── Merge merchant and market series ──────────────────────────────── */
-  // Merchants are sampled by the 5-minute sweep; for short ranges only
+  // Merchants are sampled by the 10-minute sweep; for short ranges only
   // sweep-aligned market ticks are kept so presence isn't understated.
+  // Rows are joined on exact ts, so both series are snapped to the minute:
+  // ticks written before the cron ts was rounded (lib/ingest/run tickTs)
+  // landed a second or more past it.
   const short = RANGES[range] <= RANGES["24h"];
-  const marketRows = short ? market.filter((r) => r.ts % 300 === 0) : market;
+  const snap = <T extends { ts: number }>(rows: T[]) =>
+    short ? rows.map((r) => ({ ...r, ts: r.ts - (r.ts % 60) })) : rows;
+  const historyRows = snap(history);
+  const marketRows = short
+    ? snap(market).filter((r) => r.ts % SWEEP_SEC === 0)
+    : market;
   const marketByTs = new Map(marketRows.map((r) => [r.ts, r]));
-  const merchantByTs = new Map(history.map((r) => [r.ts, r]));
+  const merchantByTs = new Map(historyRows.map((r) => [r.ts, r]));
   const allTs = [...new Set([...marketByTs.keys(), ...merchantByTs.keys()])].sort((a, b) => a - b);
 
   const points = mergeSeries(allTs, marketByTs, merchantByTs);
@@ -340,7 +348,7 @@ export default async function MerchantDetailPage({
               <ActivityByHourChart hours={hours} source={hourSource} />
               <UptimeStrip
                 marketTicks={marketRows.map((r) => r.ts)}
-                merchantTicks={history.map((r) => r.ts)}
+                merchantTicks={historyRows.map((r) => r.ts)}
               />
             </div>
           </div>

@@ -96,7 +96,7 @@ export function ActivityIndex({ data, symbol: _symbol, asset }: { data: Activity
         <Info className="mt-px size-3.5 shrink-0" aria-hidden />
         <span>
           Exchanges don&apos;t publish P2P trade volume. The orders index adds up each merchant&apos;s rise in
-          their 30-day completed-order count between back-to-back 5-minute sweeps. Price edits and ad resizes
+          their 30-day completed-order count between back-to-back 10-minute sweeps. Price edits and ad resizes
           don&apos;t move it, but orders leaving the 30-day window pull it down, so it undercounts. Treat it as a
           trend, not a total. Covers {current.hours}h now{previous ? ` and ${previous.hours}h before` : ""}
           {data.latestSweepTs != null ? (

@@ -9,7 +9,7 @@ import { LIVE_DEEP_N } from "@/lib/live";
 
 /**
  * GET /api/merchants?exchange=binance[&publisher=merchant]
- * Every merchant the 5-minute sweep has seen on this market. `isActive` =
+ * Every merchant the 10-minute sweep has seen on this market. `isActive` =
  * seen in the latest sweep; `askVsBest` / `bidVsBest` are per-side gaps to
  * the best price among active merchants; `trustScore` is the reliability
  * score from `lib/merchant-score.ts`. The live top-20 book only adds

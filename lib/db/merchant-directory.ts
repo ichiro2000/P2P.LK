@@ -6,7 +6,7 @@ import { profileStatsMap, type ProfileStats } from "./trade-activity";
 
 /**
  * Reads for the merchant directory and the reliability score (D7):
- * every known merchant from the full 5-minute sweep (`merchants`), with
+ * every known merchant from the full 10-minute sweep (`merchants`), with
  * first-seen time (tenure) and hours listed in the last 7 days (presence,
  * from `merchant_hourly`).
  */

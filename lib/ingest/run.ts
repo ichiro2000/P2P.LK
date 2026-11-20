@@ -7,6 +7,7 @@ import { collectFx, fxDue } from "@/lib/fx/collect";
 import { collectGoogleRate, googleDue } from "@/lib/fx/google";
 import { evaluateAlerts, type ExchangeBook } from "@/lib/alerts/evaluate";
 import { getFlags } from "@/lib/flags";
+import { SWEEP_SEC } from "@/lib/constants";
 
 type Job = "book" | "sweep" | "takers" | "rollup" | "retention" | "alerts" | "profiles";
 
@@ -48,12 +49,20 @@ export type TickPlan = {
   google: boolean;
 };
 
+/** Tick timestamp in seconds, rounded down to the minute. Cloudflare's
+ *  `scheduledTime` can land a second or more past the minute; market buckets
+ *  ((ts / B) * B) and merchant rows are joined on exact ts, so an unrounded
+ *  ts breaks uptime and the merchant charts on bucketed ranges. */
+export function tickTs(scheduledTimeMs: number): number {
+  return Math.floor(scheduledTimeMs / 60_000) * 60;
+}
+
 /** Which jobs run at a given minute. One cron (`* * * * *`) drives all of them. */
 export function planFor(date: Date): TickPlan {
   const m = date.getUTCMinutes();
   return {
     // Full book + merchant directory: every 10 min (D1 write budget, see DEPLOY.md §10).
-    sweep: m % 10 === 0,
+    sweep: m % (SWEEP_SEC / 60) === 0,
     profiles: m % 5 === 0,
     takers: m % 15 === 7,
     // 20:30 UTC = 02:00 Sri Lanka — quietest hour.
@@ -71,8 +80,8 @@ export async function runScheduled(
   override?: Partial<TickPlan>,
 ) {
   const env: JobEnv = { db: dbFromBinding(bindings.DB), kv: bindings.LIVE };
-  const date = new Date(scheduledTime);
-  const ts = Math.floor(scheduledTime / 1000);
+  const ts = tickTs(scheduledTime);
+  const date = new Date(ts * 1000);
   const plan = { ...planFor(date), ...override };
 
   // Exchanges run in parallel — one being slow or down never delays the other.

@@ -211,7 +211,7 @@ export function RetentionSummary() {
         ))}
       </dl>
       <p className="border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
-        The retention job runs daily at 02:00 SLT (20:30 UTC). Hourly rollups run with every 5-minute sweep.
+        The retention job runs daily at 02:00 SLT (20:30 UTC). Hourly rollups run with every 10-minute sweep.
       </p>
     </Card>
   );

@@ -80,7 +80,7 @@ export default async function MerchantsPage({ searchParams }: { searchParams: SP
     deep = deepBook ? { ads: [...deepBook.buy, ...deepBook.sell], ts: deepBook.ts } : null;
     const ads = [...book.buy, ...book.sell];
     snapshot = buildMarket(filters.asset, filters.fiat, ads);
-    // The directory comes from the full 5-minute sweep, not the top-20 book.
+    // The directory comes from the full 10-minute sweep, not the top-20 book.
     directory = buildMerchantDirectory({
       known: known?.known ?? [],
       latestSweepTs: known?.latestSweepTs ?? null,
@@ -109,7 +109,7 @@ export default async function MerchantsPage({ searchParams }: { searchParams: SP
         <PageHeader
           eyebrow="Merchant analytics"
           title={`Who makes the ${ASSET}/${FIAT.code} market`}
-          description="Every advertiser our 5-minute sweep has seen on the LKR bank-transfer book, ranked by a reliability score: confidence-adjusted completion, 30-day volume, feedback, release time, presence, tenure and account age. “Static ad?” marks listings whose amount and orders haven't moved for hours — an estimate."
+          description="Every advertiser our 10-minute sweep has seen on the LKR bank-transfer book, ranked by a reliability score: confidence-adjusted completion, 30-day volume, feedback, release time, presence, tenure and account age. “Static ad?” marks listings whose amount and orders haven't moved for hours — an estimate."
         />
 
         <FilterBar initial={filters} payTypes={adapter.bankPayTypes} showPayType={false} />

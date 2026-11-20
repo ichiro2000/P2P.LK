@@ -203,7 +203,7 @@ export function methodBreakdown(ads: readonly NormalizedAd[], topN: number): Met
 
 /* ── Showcase-ad detection (estimate) ───────────────────────────────────── */
 
-/** Per-merchant aggregates over a recent window of 5-minute sweeps. */
+/** Per-merchant aggregates over a recent window of 10-minute sweeps. */
 export type StabilityStats = {
   merchantId: string;
   samples: number;
@@ -233,7 +233,7 @@ export type ShowcaseFlag = {
 
 export const SHOWCASE_WINDOW_SEC = 6 * 3600;
 /** Need at least this much continuous evidence before calling it. */
-const MIN_SAMPLES = 24; // ≈ 2 h of 5-minute sweeps
+const MIN_SAMPLES = 12; // ≈ 2 h of 10-minute sweeps
 const MIN_SPAN_SEC = 3 * 3600;
 /** Listed amount may wobble this much (rounding, small partial edits). */
 const AMOUNT_TOLERANCE = 0.01;

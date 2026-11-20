@@ -135,6 +135,10 @@ describe("classifyShowcase", () => {
     });
   });
 
+  it("flags 3 h of 10-minute sweeps (19 samples)", () => {
+    expect(classifyShowcase({ ...base, samples: 19 })?.level).toBe("likely");
+  });
+
   it("doesn't flag a low-frequency merchant whose pace predicts < 2 orders (F27)", () => {
     // DGAK: 15 orders / 30 d → 0.06 expected in 3 h.
     expect(classifyShowcase({ ...base, minOrders: 15, maxOrders: 15 })).toBeNull();
@@ -157,7 +161,7 @@ describe("classifyShowcase", () => {
   });
 
   it.each([
-    ["too few samples", { samples: 23 }],
+    ["too few samples", { samples: 11 }],
     ["too short a span", { lastTs: 3 * 3600 - 1 }],
     ["orders moved", { maxOrders: 501 }],
     ["orders unknown", { minOrders: null }],

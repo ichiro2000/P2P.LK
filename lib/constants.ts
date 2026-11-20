@@ -18,6 +18,10 @@ export type Asset = typeof ASSET;
 export const SLT_TZ = "Asia/Colombo" as const;
 export const SLT_OFFSET_SEC = 5 * 3600 + 30 * 60;
 
+/** Full book + merchant directory sweep cadence (lib/ingest/run planFor:
+ *  every 10th UTC minute). Sweep timestamps are multiples of this. */
+export const SWEEP_SEC = 600;
+
 /** Kept as a one-element array so tests that expected an array still pass. */
 export const ASSETS = [ASSET] as const;
 

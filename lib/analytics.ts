@@ -284,7 +284,7 @@ export function summarizeMerchants(
  * whether they were listing in the latest sweep.
  */
 export type MerchantRow = MerchantSummary & {
-  /** Listing in the latest 5-minute sweep (lastSeenTs ≥ latest sweep − 120 s). */
+  /** Listing in the latest 10-minute sweep (lastSeenTs ≥ latest sweep − 120 s). */
   isActive: boolean;
   /** Unix seconds of the most recent sweep that saw them. */
   lastSeenTs: number;
@@ -330,7 +330,7 @@ export type KnownMerchantInput = {
 export const ACTIVE_SLACK_SEC = 120;
 
 /**
- * The merchant directory, built from the full 5-minute sweep (the
+ * The merchant directory, built from the full 10-minute sweep (the
  * `merchants` table), not the top-20 book:
  *   - active  = seen in the latest sweep (`lastSeenTs ≥ latestSweepTs − 120`)
  *   - gaps    = per side, vs the best ask / best bid among active merchants
