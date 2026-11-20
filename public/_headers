@@ -1,6 +1,13 @@
 # Cloudflare Workers Static Assets headers (OpenNext copies public/ into
 # .open-next/assets; this file is read by Cloudflare, not served).
-# Keep in sync with the /sw.js rule in next.config.ts.
+# Keep in sync with the /sw.js rule and SECURITY_HEADERS in next.config.ts.
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'self'
 
 /sw.js
   Cache-Control: no-cache

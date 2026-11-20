@@ -77,7 +77,7 @@ export async function rateLimit(
   }
   return NextResponse.json(
     { error: "Too many requests — please wait a minute and try again." },
-    { status: 429, headers: { ...NO_STORE, "Retry-After": "60" } },
+    { status: 429, headers: { ...NO_STORE, "Retry-After": "60", "X-Retry-After": "60" } },
   );
 }
 

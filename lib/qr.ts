@@ -66,7 +66,10 @@ export function parseBinanceProfile(raw: string): BinanceProfileRef | null {
     }
 
     // 2. Short-link paths on Binance domains (`https://s.binance.com/AbC123`).
-    if (isBinanceHost(parsed.hostname)) {
+    //    Web URLs only: any other scheme (javascript:, data:, app links)
+    //    falls through to the identifier sweep, never into a stored href.
+    if ((parsed.protocol === "https:" || parsed.protocol === "http:") && isBinanceHost(parsed.hostname)) {
+      const canonical = `https://${parsed.host}${parsed.pathname}${parsed.search}`;
       const segments = parsed.pathname
         .split("/")
         .map((s) => s.trim())
@@ -75,14 +78,14 @@ export function parseBinanceProfile(raw: string): BinanceProfileRef | null {
       if (segments.length === 1 && /^[A-Za-z0-9_-]{4,}$/.test(segments[0])) {
         return {
           userId: `${parsed.hostname.toLowerCase()}/${segments[0]}`,
-          profileUrl: trimmed,
+          profileUrl: canonical,
         };
       }
       // 3. Any other Binance URL — keep the decoded string as the stable
       //    identifier so two uploads of the same QR match.
       return {
         userId: normalizedUrlKey(parsed),
-        profileUrl: trimmed,
+        profileUrl: canonical,
       };
     }
   }

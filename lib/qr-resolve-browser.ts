@@ -18,6 +18,8 @@ const isAllowedHost = (h: string) =>
   ALLOWED.some((s) => h === s || h.endsWith(`.${s}`));
 
 const CACHE_TTL = 7 * 86400;
+/** Headless-browser launches allowed per UTC day, across the whole site. */
+const BROWSER_LAUNCHES_PER_DAY = 40;
 const LOCK_KEY = "qr:browser-lock";
 const LOCK_TTL = 60;
 
@@ -37,6 +39,16 @@ export async function resolveShortLinkViaBrowser(
   const cacheKey = `qr:resolved:${start.toString()}`;
   const cached = await env.LIVE.get(cacheKey);
   if (cached) return cached;
+  // A recent failure for this exact URL: don't launch a browser again.
+  const missKey = `qr:miss:${start.toString()}`;
+  if (await env.LIVE.get(missKey)) return null;
+
+  // Browser Rendering is billed by the hour past the free allowance, and this
+  // path is reachable without signing in: cap launches per UTC day site-wide.
+  const dayKey = `qr:browser:day:${new Date().toISOString().slice(0, 10)}`;
+  const launches = Number((await env.LIVE.get(dayKey)) ?? 0) || 0;
+  if (launches >= BROWSER_LAUNCHES_PER_DAY) return null;
+  await env.LIVE.put(dayKey, String(launches + 1), { expirationTtl: 2 * 86400 });
 
   // Single-flight: if another resolve is in progress, don't start a second
   // browser — the caller falls back to the sync parse.
@@ -75,10 +87,13 @@ export async function resolveShortLinkViaBrowser(
     if (!isAllowedHost(final.hostname)) return null;
     if (/advertiserNo=/.test(finalUrl)) {
       await env.LIVE.put(cacheKey, finalUrl, { expirationTtl: CACHE_TTL });
+    } else {
+      await env.LIVE.put(missKey, "1", { expirationTtl: 3600 }).catch(() => undefined);
     }
     return finalUrl;
   } catch (err) {
     console.error(`[qr-resolve-browser] ${(err as Error).message}`);
+    await env.LIVE.put(missKey, "1", { expirationTtl: 3600 }).catch(() => undefined);
     return null;
   } finally {
     await browser?.close().catch(() => undefined);

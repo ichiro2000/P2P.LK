@@ -35,7 +35,7 @@ export const dynamic = "force-dynamic";
  */
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id: raw } = await params;
-  const id = decodeURIComponent(raw);
+  const id = safeDecode(raw);
   const reports = await reportsForUser("binance", id).catch(() => []);
   if (reports.length === 0) return { title: "Taker not found", robots: NOINDEX_NOFOLLOW };
   const name = reports[0].displayName || "Unknown taker";
@@ -51,13 +51,22 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   };
 }
 
+/** Route params can arrive decoded already; a stray "%" must not 500. */
+function safeDecode(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 function binanceUrl(userId: string) {
   return `https://p2p.binance.com/en/advertiserDetail?advertiserNo=${encodeURIComponent(userId)}`;
 }
 
 export default async function SuspiciousDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: raw } = await params;
-  const id = decodeURIComponent(raw);
+  const id = safeDecode(raw);
 
   const reports = await reportsForUser("binance", id);
   if (reports.length === 0) notFound();

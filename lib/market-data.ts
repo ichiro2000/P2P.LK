@@ -18,6 +18,10 @@ function cachedVariant(ex: ExchangeId, q: BookQuery): BookVariant | null {
   return q.publisherType === "merchant" ? "merchant" : "all";
 }
 
+/** True when the query is answered from the cron-maintained KV copy (no
+ *  upstream call). Routes use it to rate-limit live queries harder. */
+export const isCachedQuery = (ex: ExchangeId, q: BookQuery) => cachedVariant(ex, q) != null;
+
 /**
  * The one way pages and APIs read an order book.
  * Unfiltered views come straight from KV (written every minute by the cron),

@@ -90,6 +90,22 @@ async function audit(db: Db, row: Omit<typeof schema.auditLog.$inferInsert, "ts"
     .catch(() => undefined);
 }
 
+/** Code emails per address per UTC day. Generous for real users (a few
+ *  resends plus a password reset), tight enough to stop abuse. */
+export const OTP_EMAILS_PER_DAY = 8;
+
+async function otpDailyGuard(kv: KVNamespace | undefined, email: string) {
+  if (!kv) return;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(email.trim().toLowerCase()));
+  const id = Array.from(new Uint8Array(digest).slice(0, 12), (b) => b.toString(16).padStart(2, "0")).join("");
+  const key = `otp:day:${new Date().toISOString().slice(0, 10)}:${id}`;
+  const n = Number((await kv.get(key)) ?? 0) || 0;
+  if (n >= OTP_EMAILS_PER_DAY) {
+    throw new APIError("TOO_MANY_REQUESTS", { message: "Too many codes sent to this email today. Try again tomorrow." });
+  }
+  await kv.put(key, String(n + 1), { expirationTtl: 2 * 86400 });
+}
+
 function build(env: CloudflareEnv) {
   const db = dbFromBinding(env.DB);
   const prod = process.env.NODE_ENV === "production";
@@ -207,7 +223,12 @@ function build(env: CloudflareEnv) {
 
     rateLimit: {
       enabled: true,
-      storage: "database",
+      // In-memory (per isolate) on top of the Cloudflare rate-limit bindings
+      // in app/api/auth/[...all]/route.ts. "database" would write a D1 row
+      // on every request — anyone could run up the D1 write bill.
+      // (Local dev keeps "database": no bill there, and the e2e suite's
+      // retry handling depends on it.)
+      storage: dev ? "database" : "memory",
       window: 60,
       max: 60,
       customRules: {
@@ -267,6 +288,8 @@ function build(env: CloudflareEnv) {
             const d = Object.fromEntries(
               Object.entries(data as Record<string, unknown>).filter(([, v]) => v !== undefined),
             ) as Record<string, unknown>;
+            // No profile pictures: never accept an image URL from the client.
+            delete d.image;
             if ("name" in d) {
               const v = String(d.name ?? "").trim();
               if (!v || v.length > NAME_MAX) throw new APIError("BAD_REQUEST", { message: "Name must be 1–80 characters." });
@@ -328,6 +351,19 @@ function build(env: CloudflareEnv) {
         sendVerificationOnSignUp: true,
         overrideDefaultEmailVerification: true,
         async sendVerificationOTP({ email, otp, type }) {
+          // Per-address daily cap on code emails. IP rate limits alone don't
+          // stop someone with many IPs from flooding one inbox or burning
+          // the account's daily sending quota through "resend code".
+          if (type === "email-verification") {
+            // Already verified: nothing to verify, send nothing (stops
+            // "resend code" being used to mail any registered member).
+            const u = await db.query.user.findFirst({
+              where: eq(schema.user.email, email.trim().toLowerCase()),
+              columns: { emailVerified: true },
+            });
+            if (u?.emailVerified) return;
+          }
+          await otpDailyGuard(env.LIVE, email);
           if (type === "email-verification") {
             const link = `${baseURL}/verify?email=${encodeURIComponent(email)}&code=${otp}`;
             await sendEmail(tpl.verifyEmail(email, otp, link));

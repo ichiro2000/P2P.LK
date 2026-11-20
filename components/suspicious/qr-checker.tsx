@@ -1,5 +1,6 @@
 "use client";
 
+import { safeHttpsUrl } from "@/lib/safe-url";
 import { useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
@@ -179,7 +180,7 @@ function ProfileLine({ profile }: { profile: BinanceProfileRef }) {
     <div className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
       <span className="font-mono break-all">advertiserNo {profile.userId}</span>
       <a
-        href={profile.profileUrl}
+        href={safeHttpsUrl(profile.profileUrl) ?? undefined}
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground"

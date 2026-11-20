@@ -13,6 +13,7 @@
 
 import { parseBinanceProfile, type BinanceProfileRef } from "@/lib/qr";
 import { binanceFetch } from "@/lib/exchanges/binance-http";
+import { getEnv } from "@/lib/db/client";
 
 const BINANCE_HOST_SUFFIXES = [
   "binance.com",
@@ -62,7 +63,9 @@ export async function resolveBinanceShortLink(
   opts?: { timeoutMs?: number },
 ): Promise<string | null> {
   const parsed = safeParseUrl(url);
-  if (!parsed || !isBinanceHost(parsed.hostname)) return null;
+  // Same rule for the first hop as for every redirect: web scheme, default
+  // port, Binance host.
+  if (!parsed || !/^https?:$/.test(parsed.protocol) || parsed.port || !isBinanceHost(parsed.hostname)) return null;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts?.timeoutMs ?? 5000);
@@ -87,7 +90,7 @@ export async function resolveBinanceShortLink(
       const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
       if (!location) break;
       const next = safeParseUrl(new URL(location, current).toString());
-      if (!next || !/^https?:$/.test(next.protocol) || !isBinanceHost(next.hostname)) return null;
+      if (!next || !/^https?:$/.test(next.protocol) || next.port || !isBinanceHost(next.hostname)) return null;
       current = next;
       res = null;
     }
@@ -116,7 +119,7 @@ export async function resolveBinanceShortLink(
 
   // WAF path — dynamic import so the Playwright code never lands in a
   // bundle it shouldn't (and local dev without Chromium just skips it).
-  if (wafChallenged || /^\/qr\//.test(parsed.pathname)) {
+  if (wafChallenged || /^\/qr\/[A-Za-z0-9]{8,64}\/?$/.test(parsed.pathname)) {
     console.log(
       `[qr-resolve] escalating to browser (waf=${wafChallenged}) for ${url}`,
     );
@@ -230,7 +233,25 @@ export type BinanceAdvertiserPublic = {
  *  liquid first so we exit fast when we get a hit on the first try. */
 const PROBE_FIATS = ["LKR", "USD"] as const;
 
+/** Cached wrapper: a profile is looked up at most once per 6 hours (30 min
+ *  for "not found"), so pages that show it can't drive relay traffic. */
 export async function fetchBinanceAdvertiserPublic(
+  advertiserNo: string,
+  opts?: Parameters<typeof fetchBinanceAdvertiserPublicUncached>[1],
+): Promise<BinanceAdvertiserPublic | null> {
+  if (!/^[sS]?[A-Za-z0-9]{10,}$/.test(advertiserNo)) return null;
+  const kv = await getEnv().then((e) => e.LIVE).catch(() => null);
+  const key = `bn:adv:${advertiserNo}`;
+  if (kv) {
+    const hit = (await kv.get(key, "json").catch(() => null)) as { v: BinanceAdvertiserPublic | null } | null;
+    if (hit) return hit.v;
+  }
+  const v = await fetchBinanceAdvertiserPublicUncached(advertiserNo, opts);
+  if (kv) await kv.put(key, JSON.stringify({ v }), { expirationTtl: v ? 6 * 3600 : 1800 }).catch(() => undefined);
+  return v;
+}
+
+async function fetchBinanceAdvertiserPublicUncached(
   advertiserNo: string,
   opts?: {
     timeoutMs?: number;

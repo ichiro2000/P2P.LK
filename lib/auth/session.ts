@@ -84,8 +84,7 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
 
 /** Type guards. Careful: after `if (!isMember(v)) …return`, TypeScript treats
  *  a pending Viewer as impossible — compare `v.status` directly in that case. */
-export const isMember = (v: Viewer | null): v is Viewer =>
-  !!v && (v.status === "approved" || v.role === "admin");
+export const isMember = (v: Viewer | null): v is Viewer => !!v && v.status === "approved";
 export const isAdmin = (v: Viewer | null): v is Viewer => !!v && v.role === "admin" && v.status === "approved";
 
 /** Where a signed-in but not-yet-approved viewer should go. */

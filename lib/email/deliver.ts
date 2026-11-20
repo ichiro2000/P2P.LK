@@ -60,7 +60,7 @@ function parseFrom(from: string): string | { name: string; email: string } {
 }
 
 export async function deliverEmail(mail: Email, env: MailEnv | null): Promise<void> {
-  if (process.env.NODE_ENV !== "production" && env?.LIVE) {
+  if (process.env.NODE_ENV === "development" && env?.LIVE) {
     const prev = ((await env.LIVE.get(DEV_OUTBOX_KEY, "json")) as DevMail[] | null) ?? [];
     const next = [{ ...mail, at: new Date().toISOString() }, ...prev].slice(0, DEV_OUTBOX_MAX);
     await env.LIVE.put(DEV_OUTBOX_KEY, JSON.stringify(next));
@@ -78,7 +78,9 @@ export async function deliverEmail(mail: Email, env: MailEnv | null): Promise<vo
   const sent = await emailsSentThisMonth(env.LIVE);
   if (sent >= cap) throw new EmailCapError(kind, cap);
 
-  await env.EMAIL.send({ from: parseFrom(from), to: mail.to, subject: mail.subject, html: mail.html, text: mail.text });
+  // Subjects carry user-chosen names: never let a newline through.
+  const subject = mail.subject.replace(/[\r\n]+/g, " ").trim();
+  await env.EMAIL.send({ from: parseFrom(from), to: mail.to, subject, html: mail.html, text: mail.text });
 
   // Approximate under concurrency (KV has no atomic increment); the caps sit
   // well below the allowance to absorb that.

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** Spreadsheet apps run cells starting with = + - @ as formulas. */
 function cell(v: string | number | null | undefined): string {
-  if (typeof v === "string" && /^[=+\-@\t\r]/.test(v)) v = `'${v}`;
+  if (typeof v === "string" && /^\s*[=+\-@]|^[\t\r]/.test(v)) v = `'${v}`;
   return escapeCell(v);
 }
 

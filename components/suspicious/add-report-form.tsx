@@ -1,5 +1,6 @@
 "use client";
 
+import { safeHttpsUrl } from "@/lib/safe-url";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Clock, Loader2, ShieldCheck } from "lucide-react";
@@ -277,7 +278,7 @@ export function AddReportForm({
               <Callout tone="buy" icon={CheckCircle2} title="QR decoded">
                 <div className="font-mono break-all text-foreground">advertiserNo {profile.userId}</div>
                 <a
-                  href={profile.profileUrl}
+                  href={safeHttpsUrl(profile.profileUrl) ?? undefined}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block truncate font-mono underline underline-offset-2"
@@ -291,7 +292,7 @@ export function AddReportForm({
                 <p>
                   Binance protects these redirects with a challenge, so we can&apos;t follow it.{" "}
                   <a
-                    href={decoded}
+                    href={safeHttpsUrl(decoded) ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="underline underline-offset-2 hover:text-foreground"

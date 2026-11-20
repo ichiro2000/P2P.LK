@@ -19,7 +19,7 @@
  *     validated same-origin URL from the payload (default /alerts).
  */
 
-const VERSION = "2026-11-20.12";
+const VERSION = "2026-11-20.13";
 const CACHE = `p2plk-static-${VERSION}`;
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = [OFFLINE_URL, "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/badge-96.png"];
@@ -107,6 +107,8 @@ function safeUrl(raw) {
     if (typeof raw !== "string" || !raw) return DEFAULT_URL;
     const u = new URL(raw, self.location.origin);
     if (u.origin !== self.location.origin) return DEFAULT_URL;
+    // "//host" would be read as protocol-relative by openWindow.
+    if (u.pathname.startsWith("//")) return DEFAULT_URL;
     return u.pathname + u.search + u.hash;
   } catch {
     return DEFAULT_URL;

@@ -1,5 +1,6 @@
 "use client";
 
+import { safeHttpsUrl } from "@/lib/safe-url";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Activity, AlertTriangle, ChevronRight, ExternalLink, Search, ShieldAlert, TrendingUp } from "lucide-react";
@@ -226,7 +227,7 @@ function TakerCard({ taker }: { taker: Taker }) {
           Details <ChevronRight className="size-4" />
         </Link>
         <a
-          href={head.profileUrl}
+          href={safeHttpsUrl(head.profileUrl) ?? undefined}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:h-8 sm:flex-none sm:px-3"

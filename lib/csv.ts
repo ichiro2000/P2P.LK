@@ -6,7 +6,7 @@ import type { ReportColumn, ReportTable } from "./reports";
  *  (merchant names come straight from the exchanges). Numbers are untouched. */
 export function escapeCell(v: string | number | null | undefined): string {
   if (v == null) return "";
-  const s = typeof v === "number" ? String(v) : /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+  const s = typeof v === "number" ? String(v) : /^[\s]*[=+\-@]|^[\t\r]/.test(v) ? `'${v}` : v;
   if (/[",\n\r]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }

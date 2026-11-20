@@ -23,6 +23,8 @@ const ALLOWED_HOSTS = new Set(["p2p.binance.com", "c2c.binance.com", "www.binanc
 const MAX_CALLS = 40;
 const CONCURRENCY = 8;
 const TIMEOUT_MS = 12_000;
+/** Largest Binance response passed back (a 20-ad page is ~60 KB). */
+const MAX_BODY = 1_000_000;
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36";
 
@@ -53,8 +55,12 @@ async function forward(call: Call): Promise<Result> {
       },
       body: call.method === "POST" ? (call.body ?? "{}") : undefined,
       signal: ac.signal,
+      // Never follow a redirect off the allowlisted hosts.
+      redirect: "manual",
     });
-    return { status: r.status, body: await r.text() };
+    const body = await r.text();
+    if (body.length > MAX_BODY) return { status: 502, body: "response too large" };
+    return { status: r.status, body };
   } catch (err) {
     return { status: 599, body: `relay fetch failed: ${(err as Error).message}` };
   } finally {
