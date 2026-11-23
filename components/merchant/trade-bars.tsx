@@ -197,6 +197,15 @@ export function growthText(g: number | null | undefined) {
   return `${g > 0 ? "+" : ""}${(g * 100).toFixed(1)}%`;
 }
 
+/** KPI label: "Trades today", "Trades yesterday", "Trades this week"… */
+export function tradesLabel(p: Period, kind: "this" | "last") {
+  if (p === "day") return kind === "this" ? "Trades today" : "Trades yesterday";
+  return `Trades ${kind} ${p}`;
+}
+
+/** Shown while two full periods aren't collected yet. */
+export const needsDataText = (p: Period) => `Shows once we have 2 full ${p}s of data`;
+
 export function periodWord(p: Period, kind: "this" | "last") {
   const n = p === "day" ? (kind === "this" ? "Today" : "Yesterday") : p === "week" ? "week" : "month";
   if (p === "day") return n;

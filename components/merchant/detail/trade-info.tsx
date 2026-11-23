@@ -125,6 +125,13 @@ export function TradeInfoCard({ profile }: { profile: MerchantProfileRow }) {
             <span className="text-xs text-muted-foreground">All trades</span>
             <span className="font-mono text-sm font-semibold tabular-nums">{formatInt(p.completedOrders)}</span>
           </div>
+          {p.completedOrders != null && p.completedOrders !== p.completedBuy + p.completedSell && (
+            <p className="text-[11px] text-muted-foreground">
+              Binance&apos;s total is {formatInt(Math.abs(p.completedOrders - p.completedBuy - p.completedSell))}{" "}
+              {p.completedOrders > p.completedBuy + p.completedSell ? "more" : "fewer"} than its buy + sell split (
+              {formatInt(p.completedBuy + p.completedSell)}); both are shown as Binance reports them.
+            </p>
+          )}
           <SplitBar buy={p.completedBuy} sell={p.completedSell} />
         </div>
       )}

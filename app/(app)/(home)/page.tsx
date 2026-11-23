@@ -12,7 +12,7 @@ import { getExchange, payTypeLabel, resolvePayTypes } from "@/lib/exchanges";
 import { getActiveExchange } from "@/lib/exchange-server";
 import { getBook } from "@/lib/market-data";
 import { listMarketSnapshots } from "@/lib/db/queries";
-import { latestGoogle } from "@/lib/fx/google-view";
+import { googleSeries, latestGoogle } from "@/lib/fx/google-view";
 import { GoogleStrip } from "@/components/market/google-strip";
 import { marketRegime } from "@/lib/regime";
 import { RegimeBadge } from "@/components/historical/regime-badge";
@@ -140,11 +140,12 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
   } catch {
     snapshot = null;
   }
-  const [history, google, own, regime] = await Promise.all([
+  const [history, google, own, regime, googleDay] = await Promise.all([
     historyP,
     latestGoogle().catch(() => null),
     ownP,
     marketRegime(ex, ASSET, FIAT.code).catch(() => null),
+    googleSeries("24h").catch(() => []),
   ]);
   const payLabel = payTypeLabel(adapter, filters.payType);
 
@@ -177,6 +178,7 @@ export default async function HomePage({ searchParams }: { searchParams: SP }) {
             exchangeLabel={adapter.label}
             payTypeLabel={payLabel}
             google={google?.value ?? null}
+            googleDay={googleDay}
             own={own}
           />
         ) : (

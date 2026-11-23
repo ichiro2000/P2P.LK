@@ -27,6 +27,8 @@ import {
 } from "@/lib/risk-signals";
 import type { ExchangeId } from "@/lib/exchanges";
 import { computeDollarReport, type DollarReport } from "@/lib/dollar-report";
+import { computeGoldReport, type GoldReport } from "@/lib/gold-report";
+import { GOLD_SIGNAL } from "@/lib/gold-signals";
 import type { Link } from "@/lib/dollar-signals";
 import { formatSLT } from "@/lib/format";
 
@@ -99,6 +101,8 @@ export type RiskReport = {
   };
   /** Dollar rate vs USDT (USDT/LKR only; null if it could not be computed). */
   dollar?: DollarReport | null;
+  /** Gold (Colombo vs Dubai / world spot) vs USDT (USDT/LKR only). */
+  gold?: GoldReport | null;
 };
 
 const SPARK = 60;
@@ -292,6 +296,18 @@ export async function computeRiskReport(
     }
   }
 
+  // ── gold vs USDT (Colombo premium over world gold, lag-corrected)
+  let gold: GoldReport | null = null;
+  if (asset === "USDT" && fiat === "LKR") {
+    try {
+      // A stale mid would make the Dubai-in-LKR leg look current; leave it blank instead.
+      gold = await computeGoldReport(ex, snapF.stale ? null : (latest?.mid ?? null), nowSec);
+      signals.push(...goldSignals(gold));
+    } catch (err) {
+      console.warn(`[risk] gold report failed: ${(err as Error).message}`);
+    }
+  }
+
   return {
     exchange: ex,
     asset,
@@ -318,6 +334,7 @@ export async function computeRiskReport(
     },
     series,
     dollar,
+    gold,
   };
 }
 
@@ -388,6 +405,36 @@ export function dollarSignals(d: DollarReport, ex: ExchangeId): RiskSignal[] {
     });
   }
   return out;
+}
+
+/** Risk signal from the gold report (at most one). */
+export function goldSignals(g: GoldReport): RiskSignal[] {
+  const s = g.signal;
+  if (!s) return [];
+  const up = s.direction === "up";
+  const d = s.day;
+  const pt = (v: number) => `${v >= 0 ? "+" : "−"}${(Math.abs(v) * 100).toFixed(1)} pt`;
+  return [
+    {
+      id: `gold-${s.direction}`,
+      level: s.level,
+      direction: s.direction,
+      title: up
+        ? "Colombo gold unusually dear — USDT may rise"
+        : "Colombo gold unusually cheap — USDT may fall",
+      detail:
+        `Colombo 24K (${g.sources.sl}, ${day(d.day)}) is ${pct(d.premium)} over world gold at CBSL's rate; ` +
+        `after correcting for Colombo's slow repricing (spot moved ${pct(Math.exp(d.spotChg) - 1)} in 14 days) that is ${pct(d.adjusted)}, ` +
+        `vs a normal ${pct(d.baseline ?? 0)} (median of the previous ${d.n} days): ${pt(d.dev ?? 0)}, z ${(d.z ?? 0).toFixed(1)}. ` +
+        `${up ? "A wider than normal premium means more pull to bring gold in from Dubai, paid for in dollars/USDT." : "A narrower than normal premium means less pull to bring gold in, so less demand for dollars/USDT."} ` +
+        (s.validated
+          ? `Our USDT history backs this link (${linkWords(g.link, "days")}). `
+          : `Experimental: ${linkWords(g.link, "days")}. `) +
+        `Fires from ${(GOLD_SIGNAL.dev * 100).toFixed(1)} pt and z ${GOLD_SIGNAL.z}. An estimate, not advice.`,
+      metric: `premium ${pct(d.adjusted)} vs normal ${pct(d.baseline ?? 0)} · z ${(d.z ?? 0).toFixed(1)}`,
+      score: s.strength === "strong" ? 45 : 25,
+    },
+  ];
 }
 
 /** Re-exported for the page copy. */

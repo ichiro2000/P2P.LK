@@ -527,6 +527,42 @@ export async function merchantActivityHours(
     .orderBy(asc(h.hourTs));
 }
 
+/**
+ * Hourly presence over the last `days` days for the uptime grid. `present` is
+ * how many sweeps that hour listed the merchant; `total` is the most any
+ * merchant was listed that hour, a stand-in for how many sweeps ran (some
+ * merchant is always on the book). Hours with no sweeps are left out.
+ */
+export async function merchantUptimeHours(
+  ex: ExchangeId,
+  merchantId: string,
+  asset: string,
+  fiat: string,
+  days = 7,
+): Promise<Array<{ ts: number; present: number; total: number }>> {
+  const db = await getDb();
+  const h = schema.merchantHourly;
+  const since = Math.floor(Date.now() / 1000) - days * 86400;
+  const scope = and(eq(h.exchange, ex), eq(h.asset, asset), eq(h.fiat, fiat), gte(h.hourTs, since - (since % 3600)));
+  const [totals, mine] = await Promise.all([
+    db
+      .select({ ts: h.hourTs, total: max(h.samples) })
+      .from(h)
+      .where(scope)
+      .groupBy(h.hourTs)
+      .orderBy(asc(h.hourTs)),
+    db
+      .select({ ts: h.hourTs, samples: h.samples })
+      .from(h)
+      .where(and(scope, eq(h.merchantId, merchantId))),
+  ]);
+  const byTs = new Map(mine.map((r) => [r.ts, r.samples]));
+  return totals.map((r) => {
+    const total = r.total ?? 0;
+    return { ts: r.ts, total, present: Math.min(total, byTs.get(r.ts) ?? 0) };
+  });
+}
+
 export async function getMerchant(
   ex: ExchangeId,
   merchantId: string,

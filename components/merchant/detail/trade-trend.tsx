@@ -6,7 +6,7 @@ import { KpiCard } from "@/components/common/kpi-card";
 import { formatInt, formatPct } from "@/lib/format";
 import { TRADE_SIDES, buyShare, dayIso, type Period } from "@/lib/trade-trend";
 import type { TrendSet } from "@/lib/db/trade-activity";
-import { PeriodToggle, TRADE_LEGEND, TradeBars, growthText, periodWord } from "@/components/merchant/trade-bars";
+import { PeriodToggle, TRADE_LEGEND, TradeBars, growthText, needsDataText, periodWord, tradesLabel } from "@/components/merchant/trade-bars";
 
 /** Buy/sell trade trend for one Binance merchant, Daily / Weekly / Monthly. */
 export function MerchantTradeTrend({
@@ -31,16 +31,16 @@ export function MerchantTradeTrend({
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <KpiCard
-          label={`${periodWord(period, "this")} so far`}
+          label={tradesLabel(period, "this")}
           value={running?.total != null ? formatInt(running.total) : "—"}
-          sub={running?.total != null ? `${formatInt(running.sell)} sold · ${formatInt(running.buy)} bought` : "Not measured yet"}
+          sub={running?.total != null ? `${formatInt(running.sell)} sold · ${formatInt(running.buy)} bought` : "Not counted yet"}
         />
         <KpiCard
-          label={`${periodWord(period, "last")} (complete)`}
+          label={tradesLabel(period, "last")}
           value={growth ? formatInt(growth.current.total) : "—"}
           change={growth?.total ?? null}
           changeLabel={growth ? `vs ${growth.previous.label}` : undefined}
-          sub={growth ? undefined : `Needs two fully collected ${period}s`}
+          sub={growth ? undefined : needsDataText(period)}
         />
         <KpiCard
           className="col-span-2 lg:col-span-1"

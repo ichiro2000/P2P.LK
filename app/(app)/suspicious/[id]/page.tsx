@@ -71,6 +71,7 @@ export default async function SuspiciousDetailPage({ params }: { params: Promise
   const reports = await reportsForUser("binance", id);
   if (reports.length === 0) notFound();
 
+  const isShortCode = id.startsWith("dplk");
   // `reportsForUser` is newest-first, so the last element is the first report.
   const firstReportTs = reports[reports.length - 1].ts;
 
@@ -79,7 +80,8 @@ export default async function SuspiciousDetailPage({ params }: { params: Promise
     suspiciousOrderHistory("binance", id).catch(() => []),
     // Live Binance fetch (public, no auth): verifications, join date and
     // all-time trade count that we don't store locally.
-    fetchBinanceAdvertiserPublic(id).catch(() => null),
+    // Rows keyed by a share-QR short code (dplk…) have no advertiserNo to look up.
+    isShortCode ? Promise.resolve(null) : fetchBinanceAdvertiserPublic(id).catch(() => null),
   ]);
 
   const head = reports[0];
@@ -113,7 +115,7 @@ export default async function SuspiciousDetailPage({ params }: { params: Promise
           description={<ProfileMeta userId={id} binance={binance} />}
           actions={
             <a
-              href={binanceUrl(id)}
+              href={isShortCode ? reports[0].profileUrl : binanceUrl(id)}
               target="_blank"
               rel="noopener noreferrer"
               className={buttonVariants({ variant: "outline", className: "h-10 w-full sm:h-9 sm:w-auto" })}

@@ -3,6 +3,7 @@ import { dbFromBinding, getEnv } from "@/lib/db/client";
 import { runScheduled } from "@/lib/ingest/run";
 import { collectFx } from "@/lib/fx/collect";
 import { collectGoogleRate } from "@/lib/fx/google";
+import { collectGold } from "@/lib/gold/collect";
 import { profilesTick } from "@/lib/ingest/profiles";
 
 /**
@@ -10,6 +11,7 @@ import { profilesTick } from "@/lib/ingest/profiles";
  *   GET /api/dev/tick                → normal plan for the current minute
  *   GET /api/dev/tick?all=1          → force sweep + rollup + profiles + takers + retention
  *   GET /api/dev/tick?google=1       → run only the Google USD/LKR reading
+ *   GET /api/dev/tick?gold=1         → run only the gold collector (UAE + Devi)
  *   GET /api/dev/tick?fx=1           → run only the FX rates collector
  *   GET /api/dev/tick?fx=cbsl,hnb    → … only those FX sources
  *   GET /api/dev/tick?cronfx=1       → normal tick + the cron's FX step (obeys
@@ -28,6 +30,9 @@ export async function GET(req: NextRequest) {
   const env = await getEnv();
   if (req.nextUrl.searchParams.get("google") === "1") {
     return NextResponse.json({ results: [await collectGoogleRate(dbFromBinding(env.DB))] });
+  }
+  if (req.nextUrl.searchParams.get("gold") === "1") {
+    return NextResponse.json({ results: [await collectGold(dbFromBinding(env.DB))] });
   }
   const fx = req.nextUrl.searchParams.get("fx");
   if (fx) {

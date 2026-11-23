@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBinanceProfile } from "@/lib/qr";
+import { binanceShortCode, parseBinanceProfile } from "@/lib/qr";
 
 const canonical = (id: string) => `https://p2p.binance.com/en/advertiserDetail?advertiserNo=${encodeURIComponent(id)}`;
 
@@ -54,5 +54,24 @@ describe("parseBinanceProfile", () => {
     "https://evilbinance.com/x",
   ])("returns null for %j", (raw) => {
     expect(parseBinanceProfile(raw)).toBeNull();
+  });
+});
+
+describe("binanceShortCode", () => {
+  it("pulls the dplk code out of Binance share QR URLs", () => {
+    expect(binanceShortCode("https://www.binance.com/en/qr/dplk27f049ac21c64bf88f98a0310c76264f")).toBe(
+      "dplk27f049ac21c64bf88f98a0310c76264f",
+    );
+    expect(binanceShortCode("https://www.binance.com/qr/DPLK97C5100D65DA48F3AE0AFBAA77B59398")).toBe(
+      "dplk97c5100d65da48f3ae0afbaa77b59398",
+    );
+    expect(binanceShortCode("www.binance.com/zh-CN/qr/dplkab9870e0da034301bf92d6169373df4b")).toBe(
+      "dplkab9870e0da034301bf92d6169373df4b",
+    );
+  });
+  it("ignores other hosts and other links", () => {
+    expect(binanceShortCode("https://evilbinance.com/en/qr/dplk27f049ac21c64bf88f98a0310c76264f")).toBeNull();
+    expect(binanceShortCode("https://www.binance.com/en/download")).toBeNull();
+    expect(binanceShortCode("https://p2p.binance.com/en/advertiserDetail?advertiserNo=s53bce2057f9933d5b7ba27cbc054caf2")).toBeNull();
   });
 });

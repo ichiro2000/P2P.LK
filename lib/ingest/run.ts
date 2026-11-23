@@ -5,6 +5,7 @@ import { takersTick } from "./takers";
 import { profilesTick } from "./profiles";
 import { collectFx, fxDue } from "@/lib/fx/collect";
 import { collectGoogleRate, googleDue } from "@/lib/fx/google";
+import { collectGold, goldDue } from "@/lib/gold/collect";
 import { evaluateAlerts, type ExchangeBook } from "@/lib/alerts/evaluate";
 import { getFlags } from "@/lib/flags";
 import { SWEEP_SEC } from "@/lib/constants";
@@ -47,6 +48,8 @@ export type TickPlan = {
   retention: boolean;
   fx: boolean;
   google: boolean;
+  /** UAE + Colombo gold prices, hourly at :47 (lib/gold/collect.ts). */
+  gold: boolean;
 };
 
 /** Tick timestamp in seconds, rounded down to the minute. Cloudflare's
@@ -69,6 +72,7 @@ export function planFor(date: Date): TickPlan {
     retention: date.getUTCHours() === 20 && m === 30,
     fx: fxDue(date),
     google: googleDue(date),
+    gold: goldDue(date),
   };
 }
 
@@ -110,8 +114,10 @@ export async function runScheduled(
   // FX rates for /rates: every 3 hours; logs its own ingest_runs rows (job "fx").
   // The `fxCollector` feature flag (/admin/system) can switch it off.
   // Google mid-market USD/LKR: every 30 minutes (job "fx_google"), same flag.
-  const fxOn = plan.fx || plan.google ? (await getFlags(bindings)).fxCollector : false;
+  // Gold (UAE board rate + Devi Jewellers): hourly (job "gold"), same flag.
+  const fxOn = plan.fx || plan.google || plan.gold ? (await getFlags(bindings)).fxCollector : false;
   const fx = plan.fx && fxOn ? await collectFx(env.db, { now: date }) : [];
   const google = plan.google && fxOn ? [await collectGoogleRate(env.db, date)] : [];
-  return [...results, ...fx, ...google];
+  const gold = plan.gold && fxOn ? [await collectGold(env.db, date)] : [];
+  return [...results, ...fx, ...google, ...gold];
 }

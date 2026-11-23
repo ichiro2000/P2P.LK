@@ -135,3 +135,13 @@ function clean(userId: string): BinanceProfileRef {
     profileUrl: `https://p2p.binance.com/en/advertiserDetail?advertiserNo=${encodeURIComponent(c)}`,
   };
 }
+
+/**
+ * The short-link code in a Binance share QR, e.g.
+ * `https://www.binance.com/en/qr/dplk27f0…` → `dplk27f0…`. Lowercased, since
+ * the code is case-insensitive hex. `null` when the content isn't one.
+ */
+export function binanceShortCode(raw: string): string | null {
+  const m = /(?:^|[/.])binance\.com\/(?:[a-z]{2}(?:-[a-z]{2,4})?\/)?qr\/(dplk[0-9a-f]{16,64})\b/i.exec(raw.trim());
+  return m ? m[1].toLowerCase() : null;
+}

@@ -18,6 +18,10 @@ import { AdsTable } from "./ads-table";
 import type { FilterState } from "./filter-bar";
 import { AmountQuotePanel } from "./amount-quote";
 import { AdPlacement, type OwnPlacement } from "./ad-placement";
+import { BtcLkr } from "./btc-lkr";
+import { BtcUsdtChart } from "./btc-usdt-chart";
+import { GoogleChart } from "@/components/rates/google-chart";
+import type { GooglePoint } from "@/lib/fx/google-view";
 import { useIncludeAllAds, useTradeAmount } from "@/hooks/use-trade-amount";
 import { quoteAmount } from "@/lib/liquidity";
 
@@ -37,6 +41,7 @@ export function LiveMarket({
   exchangeLabel,
   payTypeLabel,
   google,
+  googleDay,
   own,
 }: {
   initial: MarketSnapshot;
@@ -48,6 +53,8 @@ export function LiveMarket({
   payTypeLabel: string | null;
   /** Google USD/LKR mid-market rate (server-rendered), for the placement margins. */
   google: number | null;
+  /** Last 24 h of USDT mid vs Google USD/LKR (server-rendered). */
+  googleDay: GooglePoint[];
   own: OwnPlacement;
 }) {
   const url = useMemo(() => {
@@ -74,6 +81,17 @@ export function LiveMarket({
   return (
     <div className="space-y-6 lg:space-y-8">
       <MarketKpis market={market} history={history} quotes={quotes} merchantsOnly={filters.merchantType === "merchant"} />
+
+      <BtcLkr market={market} history={history} />
+
+      <BtcUsdtChart market={market} history={history} />
+
+      <PageSection
+        title="USDT/LKR vs Google USD/LKR"
+        description="The USDT P2P mid against Google's mid-market dollar, and the premium between them."
+      >
+        <GoogleChart initial={{ range: "24h", points: googleDay }} />
+      </PageSection>
 
       <AmountQuotePanel buy={quotes.buy} sell={quotes.sell} amount={amount} scope="the top 20 ads per side" />
 

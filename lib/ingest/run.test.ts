@@ -22,3 +22,11 @@ describe("tickTs", () => {
     expect(planFor(new Date(ts * 1000)).sweep).toBe(true);
   });
 });
+
+describe("planFor gold", () => {
+  it("runs the gold collector hourly at :47 UTC only", () => {
+    expect(planFor(new Date("2026-11-22T09:47:00Z")).gold).toBe(true);
+    expect(planFor(new Date("2026-11-22T09:17:00Z")).gold).toBe(false);
+    expect(planFor(new Date("2026-11-22T09:48:00Z")).gold).toBe(false);
+  });
+});

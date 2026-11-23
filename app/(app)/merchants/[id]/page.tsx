@@ -8,7 +8,7 @@ import { LiveDot } from "@/components/common/live-dot";
 import { Empty } from "@/components/common/empty";
 import { MerchantHeaderCard } from "@/components/merchant/detail/header-card";
 import { RangeSelect } from "@/components/merchant/detail/range-select";
-import { UptimeStrip } from "@/components/merchant/detail/activity-panels";
+import { UptimeWeek } from "@/components/merchant/detail/activity-panels";
 import {
   ActivityByHourChart,
   AdCountChart,
@@ -26,6 +26,7 @@ import {
   listMarketSnapshots,
   merchantActivityHours,
   merchantHistory,
+  merchantUptimeHours,
   parseRange,
 } from "@/lib/db/queries";
 import { merchantStability } from "@/lib/db/insights";
@@ -40,6 +41,7 @@ import { reliabilityScore } from "@/lib/merchant-score";
 import { reliabilityInputs, twoSidedPrices } from "@/lib/db/merchant-directory";
 import { medianOwnSpread, ownSpread } from "@/lib/competitors";
 import { NetOwnSpread, SpreadMedianText } from "@/components/merchant/own-spread";
+import { MerchantListingsSection, MerchantListingsSkeleton } from "@/components/merchant/detail/listings-section";
 import { CompetitorSection, CompetitorSectionSkeleton } from "@/components/merchant/detail/compare-section";
 import { ReliabilityInfo } from "@/components/merchant/reliability-info";
 import { MerchantTradeSection, MerchantTradeSectionSkeleton } from "@/components/merchant/detail/trade-section";
@@ -133,7 +135,7 @@ export default async function MerchantDetailPage({
   const sym = FIAT.symbol;
   const subtitle = `${asset} / ${fiat} · ${adapter.label} P2P`;
 
-  const [latest, history, market, sweepTs, activityHours, stability, relInputs, twoSided] = await Promise.all([
+  const [latest, history, market, sweepTs, activityHours, stability, relInputs, twoSided, uptimeHours] = await Promise.all([
     getMerchant(ex, id, asset, fiat),
     merchantHistory(ex, id, asset, fiat, range).catch(() => []),
     listMarketSnapshots(ex, asset, fiat, range).catch(() => []),
@@ -142,6 +144,7 @@ export default async function MerchantDetailPage({
     merchantStability(ex, asset, fiat, { merchantIds: [id] }).catch(() => []),
     reliabilityInputs(ex, asset, fiat, [id]).catch(() => null),
     twoSidedPrices(ex, asset, fiat).catch(() => []),
+    merchantUptimeHours(ex, id, asset, fiat, 7).catch(() => []),
   ]);
 
   if (!latest) {
@@ -316,6 +319,10 @@ export default async function MerchantDetailPage({
           </div>
         </div>
 
+        <Suspense fallback={<MerchantListingsSkeleton />}>
+          <MerchantListingsSection exchange={ex} asset={asset} fiat={fiat} id={latest.merchantId} />
+        </Suspense>
+
         <Suspense fallback={<CompetitorSectionSkeleton />}>
           <CompetitorSection exchange={ex} asset={asset} fiat={fiat} id={latest.merchantId} name={latest.merchantName} />
         </Suspense>
@@ -346,10 +353,7 @@ export default async function MerchantDetailPage({
             </div>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <ActivityByHourChart hours={hours} source={hourSource} />
-              <UptimeStrip
-                marketTicks={marketRows.map((r) => r.ts)}
-                merchantTicks={historyRows.map((r) => r.ts)}
-              />
+              <UptimeWeek hours={uptimeHours} now={sweepTs ?? latest.lastSeenTs} />
             </div>
           </div>
         </PageSection>

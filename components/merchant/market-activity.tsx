@@ -9,7 +9,7 @@ import { KpiCard } from "@/components/common/kpi-card";
 import { formatInt, formatPct } from "@/lib/format";
 import { TRADE_SIDES, buyShare, dayIso, type Period } from "@/lib/trade-trend";
 import type { MarketActivity, Mover } from "@/lib/db/trade-activity";
-import { PeriodToggle, TRADE_LEGEND, TradeBars, growthText, periodWord } from "./trade-bars";
+import { PeriodToggle, TRADE_LEGEND, TradeBars, growthText, needsDataText, periodWord, tradesLabel } from "./trade-bars";
 import { cn } from "@/lib/utils";
 
 /**
@@ -56,11 +56,11 @@ export function MarketActivityPanel({ initial }: { initial: MarketActivity }) {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard
-          label={`${periodWord(period, "last")} (complete)`}
+          label={tradesLabel(period, "last")}
           value={g ? formatInt(g.current.buy + g.current.sell) : "—"}
           change={g?.total ?? null}
           changeLabel={g ? `vs ${g.previous.label}` : undefined}
-          sub={g ? undefined : `Needs two fully collected ${period}s`}
+          sub={g ? undefined : needsDataText(period)}
           footer={g ? `${formatInt(g.matched)} merchants in both` : undefined}
         />
         <KpiCard

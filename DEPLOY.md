@@ -9,8 +9,8 @@
 `p2p-lk` (`d49e2422-…`), KV `p2p-lk-live` / `p2p-lk-next-cache`, Turnstile
 widget "P2P.LK sign-in and sign-up", secrets set, custom domains `p2p.lk` +
 `www.p2p.lk` (www → apex 301), Email Sending onboarded for `p2p.lk`,
-Binance relay on Vercel. Still open: `ADMIN_EMAILS` (owner's admin address)
-and a billing budget alert.
+Binance relay on Vercel, `ADMIN_EMAILS` = hello@p2p.lk (admin since 2026-11-21). Still open:
+a billing budget alert.
 
 ## Binance relay (required)
 
@@ -18,7 +18,7 @@ Binance's P2P API refuses every request from a Cloudflare Worker (HTTP 403,
 any host). The worker therefore sends Binance calls through
 `relay/binance-relay.ts`, deployed on Vercel (Hobby, region `sin1`
 Singapore; Binance also blocks US addresses) at
-`https://p2p-lk-binance-relay.vercel.app`. Worker secrets
+`https://p2p-lk-binance-relay-sable.vercel.app`. Worker secrets
 `BINANCE_RELAY_URL` + `BINANCE_RELAY_TOKEN`; Vercel env `RELAY_TOKEN` (same
 value). Calls are batched (a whole book = one relay request), so it runs at
 ~150K requests/month, inside Vercel's free limits. Redeploy:

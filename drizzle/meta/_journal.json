@@ -57,6 +57,13 @@
       "when": 1795118976433,
       "tag": "0007_push_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1795338846659,
+      "tag": "0008_gold_prices",
+      "breakpoints": true
     }
   ]
 }

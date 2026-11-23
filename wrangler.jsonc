@@ -24,6 +24,7 @@
   //   :07 every 15  -> suspicious-taker poll
   //   :03 and :33   -> Google USD/LKR mid-market (fx_google)
   //   :17 every 3 h -> CBSL + bank FX rates (fx)
+  //   :47 hourly    -> gold: UAE board rate + Devi Jewellers Colombo (gold)
   //   20:30 UTC     -> retention cleanup (02:00 Sri Lanka time)
   // Feature flags in /admin/system can pause FX collection and alert emails.
   "triggers": { "crons": ["* * * * *"] },

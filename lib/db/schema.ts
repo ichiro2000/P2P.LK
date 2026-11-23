@@ -289,7 +289,7 @@ export const ingestRuns = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     exchange: text("exchange"),
     job: text("job", {
-      enum: ["book", "sweep", "takers", "rollup", "retention", "fx", "alerts", "fx_google", "profiles", "push"],
+      enum: ["book", "sweep", "takers", "rollup", "retention", "fx", "alerts", "fx_google", "profiles", "push", "gold"],
     }).notNull(),
     ts: integer("ts").notNull(),
     durationMs: integer("duration_ms").notNull(),
@@ -366,6 +366,27 @@ export const fxIntraday = sqliteTable(
   (t) => [primaryKey({ columns: [t.source, t.pair, t.ts] }), index("ix_fx_intraday_pair_ts").on(t.pair, t.ts)],
 );
 export type FxIntradayRow = typeof fxIntraday.$inferSelect;
+
+/** Gold prices for the gold-vs-USDT signal (lib/gold-signals.ts). One row per
+ *  source × karat × SLT day; the latest reading of the day wins.
+ *    devi  Devi Jewellers, Colombo: LKR per pawn (8 g), business days
+ *    uae   Dubai Gold & Jewellery Group board rate: AED per gram, 3× a day
+ *  Kept forever (a few rows a day). Its own table so it never shows up in
+ *  the /rates FX queries. */
+export const goldPrices = sqliteTable(
+  "gold_prices",
+  {
+    source: text("source").notNull(),
+    /** 24 or 22. */
+    karat: integer("karat").notNull(),
+    /** SLT day the price is for, "YYYY-MM-DD". */
+    day: text("day").notNull(),
+    value: real("value").notNull(),
+    fetchedAt: integer("fetched_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.source, t.karat, t.day] })],
+);
+export type GoldPriceRow = typeof goldPrices.$inferSelect;
 
 export type FxRateRow = typeof fxRates.$inferSelect;
 export type FxRateInsert = typeof fxRates.$inferInsert;

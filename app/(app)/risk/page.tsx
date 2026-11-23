@@ -15,7 +15,9 @@ import { computeRiskReport, type RiskReport, type RiskSignal } from "@/lib/risk"
 import { listTrackedMarkets, parseRange } from "@/lib/db/queries";
 import { gateRange } from "@/lib/member-gate";
 import { CBSL_SIGNAL, CHURN_WARN, DEPTH_WARN, MOVE_WARN, USD_SIGNAL } from "@/lib/risk-signals";
+import { GOLD_SIGNAL } from "@/lib/gold-signals";
 import { DollarSection } from "@/components/risk/dollar-section";
+import { GoldSection } from "@/components/risk/gold-section";
 import { AsOf } from "@/components/common/as-of";
 import { ASSET, FIAT } from "@/lib/constants";
 import { formatCompact, formatFiat, formatPct, formatSLT } from "@/lib/format";
@@ -146,6 +148,27 @@ function buildMonitors(r: RiskReport): Monitor[] {
       ? `${formatPct(cb.pct, { frac: 2, sign: true })} on ${formatSLT(`${cb.day}T12:00:00+05:30`, { dateStyle: undefined, timeStyle: undefined, day: "numeric", month: "short" })}${d?.cbsl.stale ? " (old)" : ""}`
       : "no CBSL data yet",
   };
+  const gd = r.gold?.latest ?? null;
+  const goldBase: Monitor = {
+    id: "gold",
+    level: "ok",
+    title: "Gold: Colombo vs world",
+    detail:
+      `Colombo 24K pawn price over world gold (at CBSL's rate), corrected for Colombo's slow repricing, vs its normal level. ` +
+      `Colombo is always dearer than Dubai, so only an unusual premium counts: fires from ${(GOLD_SIGNAL.dev * 100).toFixed(0)} pt and z ${GOLD_SIGNAL.z}. ` +
+      `Experimental until our USDT history backs it.`,
+    metric: !r.gold
+      ? "gold data unavailable"
+      : !gd
+        ? "collecting gold history"
+        : gd.dev == null
+          ? `premium ${formatPct(gd.adjusted, { frac: 1, sign: true })} · building a baseline`
+          : `premium ${formatPct(gd.adjusted, { frac: 1, sign: true })} vs normal ${formatPct(gd.baseline ?? 0, { frac: 1, sign: true })}` +
+            (gd.z != null ? ` · z ${gd.z.toFixed(1)}` : ""),
+    spark: r.gold?.chart.slice(-60).map((p) => p.adjusted),
+    sparkLabel: "Lag-corrected Colombo gold premium, last 60 business days",
+  };
+  const goldHit = sig.get("gold-up") ?? sig.get("gold-down");
   const usdHit = sig.get("usd-google-up") ?? sig.get("usd-google-down");
   const cbslHit = sig.get("usd-cbsl-up") ?? sig.get("usd-cbsl-down");
 
@@ -165,6 +188,7 @@ function buildMonitors(r: RiskReport): Monitor[] {
     sig.get("merchant-churn") ? fromSignal(sig.get("merchant-churn")!, churnBase) : churnBase,
     usdHit ? fromSignal(usdHit, usdBase) : usdBase,
     cbslHit ? fromSignal(cbslHit, cbslBase) : cbslBase,
+    goldHit ? fromSignal(goldHit, goldBase) : goldBase,
   ];
   const known = new Set(monitors.map((m) => m.id));
   for (const x of r.signals) if (!known.has(x.id)) monitors.push(fromSignal(x, {}));
@@ -265,6 +289,16 @@ export default async function RiskPage({ searchParams }: { searchParams: SP }) {
                 description="Google USD/LKR (every 30 minutes) and CBSL's indicative rate (business days) against the USDT mid."
               >
                 <DollarSection report={report.dollar} exchange={report.exchange} />
+              </PageSection>
+            )}
+
+            {report.gold && (
+              <PageSection
+                id="gold"
+                title="Gold-based USDT prediction"
+                description="From Colombo vs Dubai gold prices."
+              >
+                <GoldSection report={report.gold} />
               </PageSection>
             )}
 

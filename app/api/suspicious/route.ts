@@ -21,6 +21,9 @@ const PostBody = z.object({
 export async function GET(req: NextRequest) {
   const limited = await rateLimit(req, "read");
   if (limited) return limited;
+  // The full list is members-only; guests check one QR at a time via /check.
+  const who = await memberFromRequest(req);
+  if (!who.ok) return who.res;
   const rows = await listSuspicious();
   return NextResponse.json({ reports: rows });
 }

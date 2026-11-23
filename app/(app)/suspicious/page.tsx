@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Lock, Plus } from "lucide-react";
 import { Topbar } from "@/components/shell/topbar";
 import { KpiGrid, PageBody, PageHeader, PageSection } from "@/components/common/page";
 import { KpiCard } from "@/components/common/kpi-card";
@@ -9,6 +9,8 @@ import { RegistryList } from "@/components/suspicious/registry-list";
 import { ReportsWeekChart, type WeekPoint } from "@/components/suspicious/reports-week-chart";
 import { bulkActivityForSuspicious, listSuspicious, type SuspiciousReport } from "@/lib/db/suspicious";
 import { pageMetadata } from "@/lib/seo";
+import { getViewer, isMember } from "@/lib/auth/session";
+import { Callout } from "@/components/suspicious/parts";
 
 export const metadata = pageMetadata({
   title: "Suspicious P2P Takers: Check a Binance Profile",
@@ -40,7 +42,11 @@ function nowSeconds() {
 }
 
 export default async function SuspiciousPage() {
-  const reports = await listSuspicious();
+  // Guests get the counts and the QR check only. The full registry (names,
+  // reasons, profile links) is for approved members, so it can't be scraped
+  // or used by a flagged taker to see who else is listed.
+  const [reports, viewer] = await Promise.all([listSuspicious(), getViewer()]);
+  const canSeeList = isMember(viewer);
 
   // Earliest report per taker → "orders since flagged". `listSuspicious` is
   // newest-first, so the minimum ts per userId is the first report.
@@ -107,9 +113,28 @@ export default async function SuspiciousPage() {
 
         <PageSection
           title="Registry"
-          description="Takers on the book right now are listed first, then takers still trading after their first report."
+          description={
+            canSeeList
+              ? "Takers on the book right now are listed first, then takers still trading after their first report."
+              : undefined
+          }
         >
-          <RegistryList reports={reports} activity={Object.fromEntries(activity)} />
+          {canSeeList ? (
+            <RegistryList reports={reports} activity={Object.fromEntries(activity)} />
+          ) : (
+            <Callout tone="neutral" icon={Lock} title="The full registry is for approved merchants">
+              <p>
+                {firstTsById.size.toLocaleString("en-US")} takers are flagged. To check one, upload their Binance QR
+                above. Approved P2P.LK merchants can browse the whole list.
+              </p>
+              <Link
+                href={viewer ? "/account/status" : "/sign-in?next=%2Fsuspicious"}
+                className={buttonVariants({ variant: "outline", className: "mt-3 h-10 sm:h-9" })}
+              >
+                {viewer ? "Check account status" : "Sign in"}
+              </Link>
+            </Callout>
+          )}
         </PageSection>
       </PageBody>
     </>

@@ -178,7 +178,9 @@ function ResultView({ result, onReset }: { result: Result; onReset: () => void }
 function ProfileLine({ profile }: { profile: BinanceProfileRef }) {
   return (
     <div className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-      <span className="font-mono break-all">advertiserNo {profile.userId}</span>
+      <span className="font-mono break-all">
+        {profile.userId.startsWith("dplk") ? "QR code" : "advertiserNo"} {profile.userId}
+      </span>
       <a
         href={safeHttpsUrl(profile.profileUrl) ?? undefined}
         target="_blank"
