@@ -108,6 +108,54 @@ export function parseBinanceReviews(json: unknown): BinanceReviews | null {
   return { positive, negative, positiveRate: total ? positive / total : null };
 }
 
+type TradeInfo = { profile: BinanceProfile; reviews: BinanceReviews | null };
+
+const profileCalls = (userNo: string) => [
+  { url: `${BASE}/v2/friendly/c2c/user/profile-and-ads-list?userNo=${encodeURIComponent(userNo)}`, method: "GET" as const },
+  { url: `${BASE}/v1/friendly/c2c/review/user-review-statistics`, method: "POST" as const, body: JSON.stringify({ userNo }) },
+];
+
+async function parseTradeInfo(profileRes: Response, reviewsRes: Response): Promise<TradeInfo | null> {
+  const asJson = async (res: Response) => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as unknown;
+  };
+  const [p, r] = await Promise.allSettled([asJson(profileRes), asJson(reviewsRes)]);
+  if (p.status !== "fulfilled") throw p.reason instanceof Error ? p.reason : new Error(String(p.reason));
+  const profile = parseBinanceProfile(p.value);
+  if (!profile) return null;
+  return { profile, reviews: r.status === "fulfilled" ? parseBinanceReviews(r.value) : null };
+}
+
+/**
+ * Many merchants in ONE request (one relay call in production, so a whole
+ * profile refresh costs a single relay request). Each entry settles on its
+ * own: a bad id or a failed call never sinks the others.
+ */
+export async function fetchBinanceTradeInfoMany(
+  userNos: string[],
+  timeoutMs = 15000,
+): Promise<Map<string, PromiseSettledResult<TradeInfo | null>>> {
+  const out = new Map<string, PromiseSettledResult<TradeInfo | null>>();
+  const valid = userNos.filter((u) => /^[sS]?[A-Za-z0-9]{10,64}$/.test(u));
+  for (const u of userNos) if (!valid.includes(u)) out.set(u, { status: "fulfilled", value: null });
+  if (valid.length === 0) return out;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  let responses: Response[];
+  try {
+    responses = await binanceFetchMany(valid.flatMap(profileCalls), ac.signal);
+  } catch (err) {
+    for (const u of valid) out.set(u, { status: "rejected", reason: err });
+    return out;
+  } finally {
+    clearTimeout(timer);
+  }
+  const parsed = await Promise.allSettled(valid.map((_, i) => parseTradeInfo(responses[2 * i], responses[2 * i + 1])));
+  valid.forEach((u, i) => out.set(u, parsed[i]));
+  return out;
+}
+
 /** Both requests together (one relay request in production). Reviews are
  *  optional (null if that call fails). */
 export async function fetchBinanceTradeInfo(

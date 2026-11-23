@@ -69,3 +69,27 @@ describe("relay handler", () => {
     expect((await handle(req({ calls }), "secret")).status).toBe(400);
   });
 });
+
+describe("batched profile refresh", () => {
+  it("fetches many merchants in one relay request", async () => {
+    vi.stubEnv("BINANCE_RELAY_URL", "https://relay.example");
+    vi.stubEnv("BINANCE_RELAY_TOKEN", "t0k");
+    const f = vi.fn(async (_u: string, init: RequestInit) => {
+      const { calls } = JSON.parse(String(init.body)) as { calls: { url: string }[] };
+      return Response.json({
+        results: calls.map((c) =>
+          c.url.includes("profile-and-ads-list")
+            ? { status: 200, body: JSON.stringify({ data: { userDetailVo: { userNo: new URL(c.url).searchParams.get("userNo"), nickName: "n" } } }) }
+            : { status: 500, body: "x" },
+        ),
+      });
+    });
+    vi.stubGlobal("fetch", f);
+    const { fetchBinanceTradeInfoMany } = await import("./binance-profile");
+    const ids = Array.from({ length: 12 }, (_, i) => `s${String(i).padStart(12, "a")}`);
+    const out = await fetchBinanceTradeInfoMany([...ids, "bad id"]);
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(ids.every((id) => out.get(id)?.status === "fulfilled")).toBe(true);
+    expect(out.get("bad id")).toEqual({ status: "fulfilled", value: null });
+  });
+});

@@ -1,8 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { schema, type Db } from "@/lib/db/client";
+import { usingRelay } from "@/lib/exchanges/binance-http";
 import {
   fetchBinanceTradeInfo,
+  fetchBinanceTradeInfoMany,
   type BinanceProfile,
   type BinanceReviews,
 } from "@/lib/exchanges/binance-profile";
@@ -169,6 +171,25 @@ export async function refreshProfiles(
 ): Promise<Outcome[]> {
   const outcomes: Outcome[] = [];
   const stmts: BatchItem<"sqlite">[] = [];
+  if (usingRelay()) {
+    // Production: every merchant in ONE relay request (the relay's free tier
+    // counts requests; it paces the calls to Binance itself).
+    const results = await fetchBinanceTradeInfoMany(ids);
+    for (const id of ids) {
+      const r = results.get(id);
+      if (r?.status === "fulfilled" && r.value) {
+        outcomes.push({ id, ok: true });
+        stmts.push(...successStatements(db, id, ts, r.value.profile, r.value.reviews));
+      } else {
+        const reason = r?.status === "rejected" ? r.reason : null;
+        const msg = !r || r.status === "fulfilled" ? "no profile" : reason instanceof Error ? (reason.name === "AbortError" ? "timeout" : reason.message) : String(reason);
+        outcomes.push({ id, ok: false, error: msg });
+        stmts.push(failureStatement(db, id, ts, msg));
+      }
+    }
+    if (stmts.length) await db.batch(stmts as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+    return outcomes;
+  }
   for (let i = 0; i < ids.length; i += CONCURRENCY) {
     if (i > 0) await sleep(opts.delayMs ?? DELAY_MS);
     const round = await Promise.all(
